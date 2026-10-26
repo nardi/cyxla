@@ -1,0 +1,58 @@
+# How the PJRT CPU plugin is built. `build_plugin.py` checks out JAX at `jax_tag`, whose
+# `MODULE.bazel` pins the XLA commit below, writes the Bazel options of jaxlib with JAX's own
+# `build/build.py`, and builds the targets in `bazel/BUILD.bazel` with them.
+
+jax_repository = "https://github.com/jax-ml/jax"
+jax_tag = "jax-v0.12.0.1"
+jax_commit = "dc4af684446e65ee98eee8090e1ff6f8211473fb"
+xla_commit = "d867969800d4a8fd045505eabc65e1e66f30794f"
+
+# JAX's build needs a hermetic Python version, although the plugin does not use Python.
+python_version = "3.12"
+
+# The release assets that wheel builds download when no library is given. The workflow
+# publishes them with each release, and `sha256` below records their hashes.
+release_url = "https://github.com/nardi/cyxla/releases/download/cyxla-pjrt-cpu-v{version}/{platform}-{library}"
+
+# The platforms of jaxlib. `bazel_options` adds to the options of `build/build.py`, with
+# the CI configuration of jaxlib on each platform. The macOS configuration of jaxlib pushes
+# to JAX's cache, which needs Google credentials, so macOS reads the public cache instead.
+# jaxlib builds for Windows on remote machines with a toolchain that XLA pins to the paths
+# of their container. The local build selects the clang-cl of the LLVM installation named by `BAZEL_LLVM`
+# instead, with the options of jaxlib's `win_clang` configuration.
+
+[platforms.linux-x86_64]
+library = "libpjrt_cpu.so"
+bazel_options = ["--config=ci_linux_x86_64", "--config=public_cache"]
+sha256 = ""
+
+[platforms.linux-aarch64]
+library = "libpjrt_cpu.so"
+bazel_options = ["--config=ci_linux_aarch64", "--config=public_cache"]
+sha256 = ""
+
+[platforms.macos-arm64]
+library = "libpjrt_cpu.dylib"
+bazel_options = ["--macos_minimum_os=11.0", "--config=public_cache"]
+sha256 = ""
+
+[platforms.windows-amd64]
+library = "pjrt_cpu.dll"
+bazel_options = [
+    "--config=clang_local",
+    # The `win_clang` configuration of JAX names this toolchain as `@local_config_cc`, which
+    # the root module of JAX does not see, so the options of that configuration follow here
+    # with the canonical name of the repository.
+    "--extra_toolchains=@@rules_cc++cc_configure_extension+local_config_cc//:cc-toolchain-x64_windows-clang-cl",
+    "--extra_execution_platforms=//jax/tools/toolchains:x64_windows-clang-cl",
+    "--compiler=clang-cl",
+    "--copt=-Werror=mismatched-tags",
+    "--config=avx_windows",
+    # The quotes keep the space in the path from splitting the option in the rc file.
+    '--repo_env=BAZEL_LLVM="C:/Program Files/LLVM"',
+    "--host_linkopt=/FORCE:MULTIPLE",
+    "--linkopt=/FORCE:MULTIPLE",
+    "--enable_runfiles",
+    "--config=public_cache",
+]
+sha256 = ""

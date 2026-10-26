@@ -1,0 +1,55 @@
+# The PJRT CPU plugin of XLA, as one shared library per operating system.
+#
+# XLA's own `pjrt_c_api_cpu_plugin.so` target passes GNU linker options on every system but
+# macOS and does not export `GetPjrtApi` from a Windows DLL. These targets link the same
+# CPU client with the options of each system. `build_plugin.py` copies this package into a
+# checkout of JAX, where `@xla` is the XLA that jaxlib builds against.
+
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@xla//xla:xla.default.bzl", "xla_cc_binary")
+
+# The library defines its own `GetPjrtApi`, because the one in XLA is hidden by the
+# visibility options of jaxlib. The entry point in `entry.cc` replaces it.
+cc_library(
+    name = "entry",
+    srcs = ["entry.cc"],
+    alwayslink = True,
+    deps = [
+        "@xla//xla/pjrt/c:pjrt_c_api_cpu_internal",
+        "@xla//xla/pjrt/c:pjrt_c_api_hdrs",
+    ],
+)
+
+PLUGIN_DEPS = [":entry"]
+
+xla_cc_binary(
+    name = "libpjrt_cpu.so",
+    additional_linker_inputs = ["version_script.lds"],
+    linkopts = [
+        "-Wl,--version-script,$(location :version_script.lds)",
+        "-Wl,--no-undefined",
+    ],
+    linkshared = True,
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = PLUGIN_DEPS,
+)
+
+xla_cc_binary(
+    name = "libpjrt_cpu.dylib",
+    linkopts = [
+        "-Wl,-exported_symbol,_GetPjrtApi",
+        "-Wl,-install_name,@rpath/libpjrt_cpu.dylib",
+        "-Wl,-undefined,error",
+    ],
+    linkshared = True,
+    target_compatible_with = ["@platforms//os:macos"],
+    deps = PLUGIN_DEPS,
+)
+
+xla_cc_binary(
+    name = "pjrt_cpu.dll",
+    linkshared = True,
+    target_compatible_with = ["@platforms//os:windows"],
+    win_def_file = "exports.def",
+    deps = PLUGIN_DEPS,
+)

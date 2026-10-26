@@ -1,0 +1,30 @@
+[project]
+name = "cyxla-pjrt-cpu"
+# The version follows the JAX release whose XLA the plugin is built from.
+version = "0.12.0.1"
+description = "The XLA PJRT CPU plugin, packaged for cyxla"
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "Nardi Lam", email = "mail@nardilam.nl" }]
+requires-python = ">=3.11"
+classifiers = [
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+]
+
+[project.urls]
+Source = "https://github.com/nardi/cyxla/tree/main/cyxla-pjrt-cpu"
+XLA = "https://github.com/openxla/xla"
+
+[project.entry-points."cyxla.plugins"]
+cpu = "cyxla_pjrt_cpu"
+
+[build-system]
+# The wheels hold a prebuilt library, so the backend in this directory writes them itself
+# and needs nothing beyond the standard library.
+requires = []
+build-backend = "backend"
+backend-path = ["."]
