@@ -1,0 +1,38 @@
+name: PJRT CPU plugin library
+description: >
+  Downloads the plugin library of this runner from the latest run of the cyxla-pjrt-cpu
+  workflow that built one, on this branch or else on main, and points
+  CYXLA_PJRT_CPU_LIBRARY at it. A run counts even when the libraries of other platforms
+  failed. Without such a run, the plugin package downloads the library of its release.
+
+runs:
+  using: composite
+  steps:
+    - name: Download the library
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        BRANCH: ${{ github.head_ref || github.ref_name }}
+      run: |
+        case "$RUNNER_OS-$RUNNER_ARCH" in
+          Linux-X64) platform=linux-x86_64 ;;
+          Linux-ARM64) platform=linux-aarch64 ;;
+          macOS-ARM64) platform=macos-arm64 ;;
+          Windows-X64) platform=windows-amd64 ;;
+          *) echo "No plugin for $RUNNER_OS on $RUNNER_ARCH." && exit 1 ;;
+        esac
+        directory="$RUNNER_TEMP/plugin-library"
+        for branch in "$BRANCH" main; do
+          runs=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow cyxla-pjrt-cpu.yml \
+            --branch "$branch" --limit 20 --json databaseId --jq '.[].databaseId')
+          for run in $runs; do
+            if gh run download "$run" --repo "$GITHUB_REPOSITORY" \
+              --name "library-$platform" --dir "$directory" 2> /dev/null; then
+              library=$(ls "$directory"/* | head -n 1)
+              echo "Using $library from run $run on $branch."
+              echo "CYXLA_PJRT_CPU_LIBRARY=$library" >> "$GITHUB_ENV"
+              exit 0
+            fi
+          done
+        done
+        echo "No run built a library of $platform, so the released library is used."

@@ -1,0 +1,232 @@
+name: cyxla-pjrt-cpu
+
+# The plugin is built from XLA with the Bazel options of jaxlib, one library per platform.
+# Pushes to any branch build it, so a change can be checked before it reaches main. A tag
+# also publishes the libraries as release assets and the wheels to PyPI.
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "cyxla-pjrt-cpu/**"
+      - ".github/workflows/cyxla-pjrt-cpu.yml"
+    tags: ["cyxla-pjrt-cpu-v*"]
+  pull_request:
+    paths:
+      - "cyxla-pjrt-cpu/**"
+      - ".github/workflows/cyxla-pjrt-cpu.yml"
+
+defaults:
+  run:
+    shell: bash
+    working-directory: cyxla-pjrt-cpu
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Test the backend and the build script
+        run: uv run --no-project --python 3.13 --with pytest pytest tests
+
+  library:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-x86_64
+            runner: ubuntu-latest
+          - platform: linux-aarch64
+            runner: ubuntu-24.04-arm
+          - platform: macos-arm64
+            runner: macos-15
+          - platform: windows-amd64
+            runner: windows-2022
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      # The Linux runners hold SDKs that the build does not use, and the sources and outputs
+      # of XLA and LLVM do not fit next to them.
+      - name: Free disk space
+        if: runner.os == 'Linux'
+        working-directory: .
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/boost /usr/share/swift
+          sudo docker image prune --all --force > /dev/null
+          df -h /
+          # Bazel's Android rules read these variables and fail on the removed SDK.
+          for variable in ANDROID_HOME ANDROID_SDK_ROOT ANDROID_NDK ANDROID_NDK_HOME ANDROID_NDK_ROOT ANDROID_NDK_LATEST_HOME; do
+            echo "$variable=" >> "$GITHUB_ENV"
+          done
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Bazelisk reads the Bazel version that JAX pins in `.bazelversion`.
+      - name: Install Bazelisk
+        uses: bazel-contrib/setup-bazel@0.15.0
+        with:
+          bazelisk-cache: true
+
+      # A build without a cache takes hours on these runners. The disk cache of the last
+      # build of this platform is restored first, and saved below even when the build fails
+      # or runs out of time, so the next run continues where this one stopped.
+      - name: Restore the Bazel disk cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/bazel-disk-cache
+          key: bazel-${{ matrix.platform }}-${{ hashFiles('cyxla-pjrt-cpu/plugin.toml', 'cyxla-pjrt-cpu/bazel/**') }}-${{ github.run_id }}
+          restore-keys: |
+            bazel-${{ matrix.platform }}-${{ hashFiles('cyxla-pjrt-cpu/plugin.toml', 'cyxla-pjrt-cpu/bazel/**') }}-
+            bazel-${{ matrix.platform }}-
+
+      # The step stops before the job does, so the cache step after it still runs.
+      - name: Build the plugin
+        timeout-minutes: 320
+        run: python build_plugin.py --output library --disk-cache ~/bazel-disk-cache
+
+      # The execroot shows which inputs or output directories a failed action missed.
+      - name: Show the execroot after a failed Windows build
+        if: failure() && runner.os == 'Windows'
+        run: |
+          root=$(cd build/jax && bazelisk --output_user_root=C:/b info execution_root 2> /dev/null | sed 's/^execution_root: //' || true)
+          echo "execution root: $root"
+          ls "$root/external" | head -40 || true
+          ls "$root/external/xla++llvm_extension+llvm-project/mlir/lib/Dialect/LLVMIR/IR" | head || true
+
+      # Loading the library fails early when the build hides `GetPjrtApi`.
+      - name: Check the exported entry point
+        run: python -c "import ctypes, glob; [ctypes.CDLL(path).GetPjrtApi for path in glob.glob('library/*')]"
+
+      - name: Save the Bazel disk cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: ~/bazel-disk-cache
+          key: bazel-${{ matrix.platform }}-${{ hashFiles('cyxla-pjrt-cpu/plugin.toml', 'cyxla-pjrt-cpu/bazel/**') }}-${{ github.run_id }}
+
+      - name: Upload the library
+        uses: actions/upload-artifact@v4
+        with:
+          name: library-${{ matrix.platform }}
+          path: cyxla-pjrt-cpu/library/*
+
+  wheels:
+    needs: [test, library]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Download the libraries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: library-*
+          path: cyxla-pjrt-cpu/libraries
+
+      # The backend reads the platform and the wheel tag from each library.
+      - name: Build the wheels and the sdist
+        run: |
+          for library in libraries/*/*; do
+            uv build --wheel -o dist -C library="$library"
+          done
+          uv build --sdist -o dist
+          sha256sum libraries/*/* dist/*
+
+      - name: Upload the distributions
+        uses: actions/upload-artifact@v4
+        with:
+          name: plugin-dist
+          path: cyxla-pjrt-cpu/dist/*
+
+  check:
+    needs: wheels
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            tag: manylinux_*_x86_64
+          - runner: ubuntu-24.04-arm
+            tag: manylinux_*_aarch64
+          - runner: macos-15
+            tag: macosx_*_arm64
+          - runner: windows-2022
+            tag: win_amd64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download the distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: plugin-dist
+          path: cyxla-pjrt-cpu/dist
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      # cyxla builds from this checkout, which needs the C compiler of the runner.
+      - name: Install the wheel and cyxla
+        run: python -m pip install dist/*-${{ matrix.tag }}.whl ../cyxla
+
+      - name: Run a program on the plugin
+        run: python tests/run_plugin.py
+
+  release:
+    needs: check
+    if: startsWith(github.ref, 'refs/tags/cyxla-pjrt-cpu-v')
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download the libraries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: library-*
+          path: cyxla-pjrt-cpu/libraries
+
+      - name: Download the distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: plugin-dist
+          path: cyxla-pjrt-cpu/dist
+
+      # The asset names follow `release_url` in `plugin.toml`, which wheel builds from the
+      # sdist download.
+      - name: Publish the libraries as release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir assets
+          for directory in libraries/library-*; do
+            platform="${directory#libraries/library-}"
+            for library in "$directory"/*; do
+              cp "$library" "assets/$platform-$(basename "$library")"
+            done
+          done
+          sha256sum assets/*
+          gh release create "$GITHUB_REF_NAME" assets/* --title "$GITHUB_REF_NAME" \
+            --notes "PJRT CPU plugin libraries of ${GITHUB_REF_NAME#cyxla-pjrt-cpu-v}."
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: cyxla-pjrt-cpu/dist
