@@ -1,0 +1,18 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv*
+
+# Test output
+.coverage
+.coverage.*
+coverage.xml
+
+# Coverage builds copy the generated C file next to the Cython source.
+/src/cyxla/*.c

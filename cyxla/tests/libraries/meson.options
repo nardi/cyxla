@@ -1,0 +1,1 @@
+option('pjrt_include', type: 'string', description: 'Directory that holds xla/pjrt/c/pjrt_c_api.h')
