@@ -22,7 +22,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import NamedTuple, Protocol
 
-from cyxla import _runtime
+from cyxla import _ffi, _runtime
 from cyxla._types import OptionValue, Plugin, RuntimeInfo
 
 PLUGIN_ENVIRONMENT_VARIABLE = "CYXLA_PJRT_PLUGIN"
@@ -253,6 +253,7 @@ def initialize(
     *,
     platform: str | None = None,
     options: Mapping[str, OptionValue] | None = None,
+    jax_targets: bool = True,
 ) -> RuntimeInfo:
     """Loads a PJRT plugin and returns details of its runtime.
 
@@ -260,6 +261,10 @@ def initialize(
     default options of `platform`, which is `cpu` if not given. `options` add to or replace
     the plugin's client options. A process loads one plugin, so later calls return the
     details of the first.
+
+    With `jax_targets` the FFI handlers that jaxlib ships are registered with the plugin,
+    which `jnp.linalg` programs need, and so are the targets registered earlier with
+    `register_ffi_target`. Pass `False` to register none.
     """
     global loaded_plugin
     if _runtime.is_initialized():
@@ -276,6 +281,9 @@ def initialize(
     merged = {**chosen.create_options, **(options or {})}
     path = chosen.path.resolve()
     info = _runtime.initialize(str(path), tuple(merged.items()))
+    _ffi.apply_targets()
+    if jax_targets:
+        _ffi.register_jax_targets()
     status = path.stat()
     loaded_plugin = PluginIdentity(
         info.platform, path, status.st_size, status.st_mtime_ns

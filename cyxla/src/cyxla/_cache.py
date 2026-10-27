@@ -212,7 +212,15 @@ def compile_program(
                 load_seconds=time.perf_counter() - start, loaded=1
             )
     start = time.perf_counter()
-    executable = Executable.compile(program.code, compile_options())
+    try:
+        executable = Executable.compile(program.code, compile_options())
+    except RuntimeError as error:
+        if "No FFI handler registered" not in str(error):
+            raise
+        raise RuntimeError(
+            f"{error}\nRegister the target with `cyxla.register_ffi_target`, or call "
+            "`cyxla.mirror_jax_registrations` before the library that provides it is imported."
+        ) from error
     statistics = CompileStatistics(
         compile_seconds=time.perf_counter() - start, compiled=1
     )

@@ -17,7 +17,13 @@ cdef extern from "xla/pjrt/c/pjrt_c_api.h" nogil:
     ctypedef struct PJRT_LoadedExecutable
     ctypedef struct PJRT_Executable
     ctypedef struct PJRT_SerializedExecutable
-    ctypedef struct PJRT_Extension_Base
+    ctypedef enum PJRT_Extension_Type:
+        PJRT_Extension_Type_FFI
+
+    ctypedef struct PJRT_Extension_Base:
+        size_t struct_size
+        PJRT_Extension_Type type
+        PJRT_Extension_Base* next
 
     ctypedef enum PJRT_Buffer_Type:
         PJRT_Buffer_Type_F64
@@ -211,6 +217,7 @@ cdef extern from "xla/pjrt/c/pjrt_c_api.h" nogil:
 
     ctypedef struct PJRT_Api:
         size_t struct_size
+        PJRT_Extension_Base* extension_start
         PJRT_Api_Version pjrt_api_version
         void (*PJRT_Error_Destroy)(PJRT_Error_Destroy_Args* args) noexcept nogil
         void (*PJRT_Error_Message)(PJRT_Error_Message_Args* args) noexcept nogil
@@ -232,3 +239,21 @@ cdef extern from "xla/pjrt/c/pjrt_c_api.h" nogil:
         PJRT_Error* (*PJRT_Buffer_Destroy)(PJRT_Buffer_Destroy_Args* args) noexcept nogil
         PJRT_Error* (*PJRT_Buffer_ToHostBuffer)(PJRT_Buffer_ToHostBuffer_Args* args) noexcept nogil
         PJRT_Error* (*PJRT_Buffer_UnsafePointer)(PJRT_Buffer_UnsafePointer_Args* args) noexcept nogil
+
+
+cdef extern from "xla/pjrt/c/pjrt_c_api_ffi_extension.h" nogil:
+    ctypedef struct PJRT_FFI_Register_Handler_Args:
+        size_t struct_size
+        const char* target_name
+        size_t target_name_size
+        void* handler
+        const char* platform_name
+        size_t platform_name_size
+        int traits
+
+    enum:
+        PJRT_FFI_Register_Handler_Args_STRUCT_SIZE
+
+    ctypedef struct PJRT_FFI_Extension:
+        PJRT_Extension_Base base
+        PJRT_Error* (*register_handler)(PJRT_FFI_Register_Handler_Args* args) noexcept nogil

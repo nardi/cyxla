@@ -41,16 +41,32 @@ def lower(
     function: Callable[..., Any],
     shapes: Sequence[jax.ShapeDtypeStruct],
     platform: str | None = None,
+    custom_calls: Sequence[str] = (),
 ) -> LoweredProgram:
     """Lowers a function to StableHLO for a platform, by default the loaded plugin's.
 
     `function` is typed `Callable[..., Any]` because it may take and return any arrays that
     JAX traces. Unused arguments stay in the signature, since callers pass every input of a
-    program.
+    program. `jax.export` refuses custom calls that it knows no compatibility guarantees
+    for, such as the targets of third-party libraries, so `custom_calls` names the targets
+    that the function may call. The kernels of `jnp.linalg` need no entry.
     """
-    exported = jax.export.export(
-        jax.jit(function, keep_unused=True), platforms=[lowering_platform(platform)]
-    )(*shapes)
+    try:
+        exported = jax.export.export(
+            jax.jit(function, keep_unused=True),
+            platforms=[lowering_platform(platform)],
+            disabled_checks=[
+                jax.export.DisabledSafetyCheck.custom_call(name)
+                for name in custom_calls
+            ],
+        )(*shapes)
+    except ValueError as error:
+        if "no compatibility guarantees" not in str(error):
+            raise
+        raise ValueError(
+            f"{error}\nName the custom calls that the function may run in the "
+            "`custom_calls` argument of `cyxla.lower`."
+        ) from error
     return LoweredProgram(
         code=bytes(exported.mlir_module_serialized), text=exported.mlir_module()
     )

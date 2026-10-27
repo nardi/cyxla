@@ -56,6 +56,11 @@ from cython.cimports.cyxla._pjrt import (
     PJRT_Executable_Serialize_Args_STRUCT_SIZE,
     PJRT_ExecuteOptions,
     PJRT_ExecuteOptions_STRUCT_SIZE,
+    PJRT_Extension_Base,
+    PJRT_Extension_Type_FFI,
+    PJRT_FFI_Extension,
+    PJRT_FFI_Register_Handler_Args,
+    PJRT_FFI_Register_Handler_Args_STRUCT_SIZE,
     PJRT_HostBufferSemantics_kImmutableOnlyDuringCall,
     PJRT_HostBufferSemantics_kImmutableZeroCopy,
     PJRT_LoadedExecutable,
@@ -573,6 +578,53 @@ def runtime_info() -> RuntimeInfo:
 def is_initialized() -> bool:
     """Returns whether a PJRT plugin is loaded."""
     return api != cython.NULL
+
+
+@cython.cfunc
+def ffi_extension() -> cython.pointer[PJRT_FFI_Extension]:
+    """Returns the FFI extension of the loaded plugin, or NULL if it has none."""
+    extension: cython.pointer[PJRT_Extension_Base] = api.extension_start
+    while extension != cython.NULL and extension.type != PJRT_Extension_Type_FFI:
+        extension = extension.next
+    return cython.cast(cython.pointer[PJRT_FFI_Extension], extension)
+
+
+def supports_ffi() -> bool:
+    """Returns whether the loaded plugin can register FFI handlers."""
+    require_runtime()
+    return ffi_extension() != cython.NULL
+
+
+def register_ffi_handler(
+    name: str, handler: int, platform: str, traits: int = 0
+) -> None:
+    """Registers a typed FFI handler under a target name with the loaded plugin.
+
+    `handler` is the address of an `XLA_FFI_Handler`, which is the pointer inside the
+    capsules that `jax.ffi.register_ffi_target` takes. Programs that call the target by
+    name compile after this returns. The plugin keeps the registration for the whole
+    process. It calls the handler once to read its metadata, so the address has to be a
+    real handler.
+    """
+    require_runtime()
+    ffi: cython.pointer[PJRT_FFI_Extension] = ffi_extension()
+    if ffi == cython.NULL:
+        raise RuntimeError(  # pragma: no cover
+            "The PJRT plugin does not support FFI handlers."
+        )
+    encoded_name: bytes = name.encode()
+    encoded_platform: bytes = platform.encode()
+    arguments: PJRT_FFI_Register_Handler_Args
+    memset(cython.address(arguments), 0, cython.sizeof(arguments))
+    arguments.struct_size = PJRT_FFI_Register_Handler_Args_STRUCT_SIZE
+    arguments.target_name = encoded_name
+    arguments.target_name_size = len(encoded_name)
+    arguments.handler = cython.cast(cython.p_void, cython.cast(uintptr_t, handler))
+    arguments.platform_name = encoded_platform
+    arguments.platform_name_size = len(encoded_platform)
+    arguments.traits = traits
+    if check(ffi.register_handler(cython.address(arguments))) != 0:
+        raise_last_error("PJRT_FFI_Register_Handler")  # pragma: no cover
 
 
 def error_info() -> ErrorInfo:

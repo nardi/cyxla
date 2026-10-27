@@ -2,6 +2,7 @@ python.install_sources(
   '__init__.py',
   '__main__.py',
   '_cache.py',
+  '_ffi.py',
   '_lowering.py',
   '_plugins.py',
   '_types.py',

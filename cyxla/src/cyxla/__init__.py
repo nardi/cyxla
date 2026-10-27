@@ -21,6 +21,11 @@ from cyxla._cache import (
     load_lowered,
     store_lowered,
 )
+from cyxla._ffi import (
+    mirror_jax_registrations,
+    register_ffi_target,
+    register_jax_targets,
+)
 from cyxla._lowering import LoweredProgram, lower
 from cyxla._plugins import (
     PLATFORM_ENVIRONMENT_VARIABLE,
@@ -97,6 +102,9 @@ __all__ = [
     "library_identity",
     "load_lowered",
     "lower",
+    "mirror_jax_registrations",
+    "register_ffi_target",
+    "register_jax_targets",
     "runtime_info",
     "store_lowered",
 ]

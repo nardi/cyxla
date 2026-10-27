@@ -1,5 +1,6 @@
 """Shared fixtures: the PJRT CPU plugin, a fresh disk cache and helpers for subprocesses."""
 
+import ctypes
 import os
 import shutil
 import subprocess
@@ -9,6 +10,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import NamedTuple
 
+import jax
 import pytest
 
 import cyxla as cx
@@ -123,3 +125,34 @@ def sample_libraries(tmp_path_factory: pytest.TempPathFactory) -> SampleLibrarie
         return path
 
     return SampleLibraries(*(library(name) for name in SampleLibraries._fields))
+
+
+@pytest.fixture(scope="session")
+def ffi_library(tmp_path_factory: pytest.TempPathFactory) -> ctypes.CDLL:
+    """Builds the library in `tests/ffi_library` with Meson and returns it loaded."""
+    build = tmp_path_factory.mktemp("ffi_library")
+    source = Path(__file__).parent / "ffi_library"
+    for command in (
+        [
+            meson_executable(),
+            "setup",
+            str(build),
+            str(source),
+            "--vsenv",
+            "--buildtype=release",
+            f"-Dffi_include={jax.ffi.include_dir()}",
+        ],
+        [meson_executable(), "compile", "-C", str(build)],
+    ):
+        result = subprocess.run(
+            command, capture_output=True, text=True, env=without_coverage(), check=False
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+    (path,) = [
+        path
+        for path in build.iterdir()
+        if "scale" in path.name and path.suffix in (".so", ".dylib", ".dll")
+    ]
+    library = ctypes.CDLL(str(path))
+    library.scale_handler.restype = ctypes.c_void_p
+    return library

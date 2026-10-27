@@ -42,6 +42,18 @@ executable, statistics = cx.compile_program(program)
 (result,) = executable.run([np.array([0.0, 1.0, 2.0])], output_sizes=[3])
 ```
 
+The linear algebra of `jnp.linalg` works the same way, as the section on custom calls
+explains:
+
+<!-- name: test_readme -->
+```python
+matrix = np.array([[4.0, 1.0], [1.0, 3.0]])
+program = cx.lower(jnp.linalg.cholesky, [jax.ShapeDtypeStruct((2, 2), jnp.float64)])
+executable, _ = cx.compile_program(program)
+(factor,) = executable.run([matrix], output_sizes=[4])
+assert np.allclose(factor.reshape(2, 2), np.linalg.cholesky(matrix))
+```
+
 `Executable.run` is for tests and interactive checks. Extension modules call `execute`
 from `cyxla/_runtime.pxd` instead, as the next section shows.
 
@@ -107,6 +119,35 @@ Other packages can provide a plugin with an entry point in the `cyxla.plugins` g
 The entry point names a module with `PLATFORM`, `CREATE_OPTIONS` and `library_path()`,
 as `cyxla_pjrt_cpu` has.
 
+## Custom calls
+
+Some JAX functions lower to custom calls, which are native functions that the program
+runs. On the CPU, `jnp.linalg` and `jax.scipy.linalg` call the LAPACK kernels that
+jaxlib ships. A PJRT plugin is a separate build of XLA that does not know them, so
+`cx.initialize()` registers jaxlib's typed FFI handlers with the plugin by name.
+Programs with `cholesky`, `solve`, `svd`, `eigh`, `qr`, `lu`, `eigvals` and the other
+linear algebra functions then compile and run like they do in JAX.
+
+A library with its own primitives registers a typed FFI handler with
+`jax.ffi.register_ffi_target`, which only tells JAX about it. cyxla needs the handler as
+well, and there are two ways to give it. Call `cx.register_ffi_target` with the same
+arguments, or call `cx.mirror_jax_registrations()` once before importing the library, so
+that everything it registers with JAX reaches the plugin too. `jax.export` refuses
+custom calls it has no compatibility promise for, so `cx.lower` takes the names of the
+targets that the function may call.
+
+```python
+cx.mirror_jax_registrations()
+import my_library  # Registers its handlers with JAX, and now with the plugin.
+
+program = cx.lower(my_library.function, shapes, custom_calls=["my_target"])
+```
+
+The plugin accepts typed FFI handlers with an `execute` stage. It does not run the older
+untyped custom calls (`api_version=0`) or the Python callbacks of `jax.pure_callback`
+and `jax.experimental.io_callback`, and compiling a program with one raises an error
+that names the target.
+
 ## Disk cache
 
 `compile_program` stores executables in the cache directory under a hash of their
@@ -127,9 +168,9 @@ distributions that the caller names.
 
 - Buffers hold float64 values only. TPUs do not support float64, so programs for them
   fail to compile.
-- cyxla does not register the custom calls of jaxlib with the plugin. Functions that JAX
-  lowers to them, such as most of `jnp.linalg`, fail to compile. Elementwise math,
-  reductions and control flow work.
+- Custom calls need a typed FFI handler. Untyped custom calls and Python callbacks do
+  not work, and functions with complex inputs or outputs, such as the eigenvalues of
+  `jnp.linalg.eig`, must turn them into float64 values inside the function.
 - The GPU and TPU paths are tested up to client creation. CI has no GPU, so execution on
   one is untested.
 - On Windows only the CPU plugin exists, since JAX publishes no native GPU plugins
