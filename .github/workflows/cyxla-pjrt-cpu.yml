@@ -94,14 +94,17 @@ jobs:
         timeout-minutes: 320
         run: python build_plugin.py --output library --disk-cache ~/bazel-disk-cache
 
-      # The execroot shows which inputs or output directories a failed action missed.
-      - name: Show the execroot after a failed Windows build
+      # The failed copy action prints nothing, so the step runs its script again by hand.
+      - name: Show a failed Windows copy action
         if: failure() && runner.os == 'Windows'
         run: |
           root=$(cd build/jax && bazelisk --output_user_root=C:/b info execution_root 2> /dev/null | sed 's/^execution_root: //' || true)
-          echo "execution root: $root"
-          ls "$root/external" | head -40 || true
-          ls "$root/external/xla++llvm_extension+llvm-project/mlir/lib/Dialect/LLVMIR/IR" | head || true
+          cd "$root"
+          script=bazel-out/x64_windows-clang-cl-opt-exec/bin/external/xla++llvm_extension+llvm-project/llvm/generate_regalloc_model1_h-cmd.bat
+          cat "$script" || true
+          cmd.exe //C "$(cygpath -w "$script")" || echo "exit code $?"
+          ls -la external/ | head -5 || true
+          ls -la external/xla++llvm_extension+llvm-project/llvm/lib/Analysis/models | head || true
 
       # Loading the library fails early when the build hides `GetPjrtApi`.
       - name: Check the exported entry point
