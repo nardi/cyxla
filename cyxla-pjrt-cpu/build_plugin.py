@@ -82,8 +82,10 @@ def startup_options(platform_name: str, source: Path, user_root: str) -> list[st
 
     On Windows, Bazel's output lives under a short path, because the paths of XLA's outputs
     exceed the length limit of Windows otherwise. JAX's CI also passes its Java security
-    file there, which resolves names more reliably. Bazel creates real symlinks there only
-    on request, and the LLVM build copies files through them.
+    file there, which resolves names more reliably. Bazel must not create real symlinks
+    there. The links inside the LLVM repository would be relative, and Windows resolves
+    those against the path of the execroot junction instead of the real path, so they
+    point to repositories that the execroot does not link.
     """
     if not platform_name.startswith("windows"):
         return []
@@ -91,7 +93,6 @@ def startup_options(platform_name: str, source: Path, user_root: str) -> list[st
     return [
         f"--output_user_root={user_root}",
         f"--host_jvm_args=-Djava.security.properties=file:///{security}",
-        "--windows_enable_symlinks",
     ]
 
 

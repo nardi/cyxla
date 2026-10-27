@@ -52,10 +52,6 @@ bazel_options = [
     '--repo_env=BAZEL_LLVM="C:/Program Files/LLVM"',
     "--host_linkopt=/FORCE:MULTIPLE",
     "--linkopt=/FORCE:MULTIPLE",
-    # The repository cache of Bazel links fetched repositories into the output base, and
-    # the cmd.exe actions of LLVM cannot follow those links from the execroot.
-    "--repo_contents_cache=",
-    "--enable_runfiles",
     "--config=public_cache",
 ]
 sha256 = ""

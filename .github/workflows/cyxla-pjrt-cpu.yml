@@ -100,56 +100,10 @@ jobs:
         run: |
           root=$(cd build/jax && bazelisk --output_user_root=C:/b info execution_root 2> /dev/null | sed 's/^execution_root: //' || true)
           cd "$root"
-          mkdir -p "$TEMP/probe"
-          source='external\xla++llvm_extension+llvm-project\llvm\lib\Analysis\models\regalloc-eviction-test-model.inc'
-          absolute='D:\_bazel\external\xla++llvm_extension+llvm-project\llvm\lib\Analysis\models\regalloc-eviction-test-model.inc'
-          probe=$(cygpath -w "$TEMP/probe")
-          echo "--- dir through the execroot link"
-          cmd.exe //C "dir $source" || echo "exit code $?"
-          echo "--- dir at the absolute path"
-          cmd.exe //C "dir $absolute" || echo "exit code $?"
-          echo "--- type through the execroot link"
-          cmd.exe //C "type $source > NUL" || echo "exit code $?"
-          echo "--- copy through the execroot link"
-          cmd.exe //C "copy /Y \"$source\" \"$probe\\a.h\"" || echo "exit code $?"
-          echo "--- copy at the absolute path"
-          cmd.exe //C "copy /Y \"$absolute\" \"$probe\\b.h\"" || echo "exit code $?"
-          echo "--- junctions of the llvm repositories"
-          cmd.exe //C "dir /AL external" | grep -i "llvm" || echo "none"
-          echo "--- how far the path resolves through the link"
-          for part in 'external\xla++llvm_extension+llvm-project' 'external\xla++llvm_extension+llvm-project\llvm' 'external\xla++llvm_extension+llvm-project\llvm\lib'; do
-            echo "$part"
-            cmd.exe //C "dir /B \"$part\"" | head -3 || echo "exit code $?"
-          done
-          echo "--- the entry in the output base"
-          cmd.exe //C "dir /AL D:\\_bazel\\external" | grep -i "llvm-project" || echo "not a link"
-          echo "--- junctions that do resolve"
-          for repo in 'abseil-cpp+' 'xla++llvm_extension+llvm_xz' 'bazel_tools'; do
-            echo "$repo"
-            cmd.exe //C "dir /B \"external\\$repo\"" | head -2 || echo "exit code $?"
-          done
-          echo "--- the same listing for each repository, in three forms"
-          for repo in 'bazel_tools' 'abseil-cpp+' 'xla++llvm_extension+llvm_xz' 'xla++llvm_extension+llvm-project'; do
-            for form in 'external\REPO\*' '.\external\REPO\*' 'D:\_bazel\execroot\_main\external\REPO\*'; do
-              target="${form//REPO/$repo}"
-              if cmd.exe //C "dir /B $target" > /dev/null 2>&1; then echo "ok    $target"; else echo "FAILS $target"; fi
-            done
-          done
-          echo "--- files deeper in the LLVM repository"
-          for sub in 'llvm' 'llvm\lib' 'llvm\lib\Analysis' 'llvm\lib\Analysis\models'; do
-            target="external\\xla++llvm_extension+llvm-project\\$sub\\*"
-            if cmd.exe //C "dir /B $target" > /dev/null 2>&1; then echo "ok    $target"; else echo "FAILS $target"; fi
-          done
-          echo "--- the entries of llvm in the output base"
-          cmd.exe //C "dir /AL D:\\_bazel\\external\\xla++llvm_extension+llvm-project\\llvm" | head -30 || true
-          echo "--- the entries of llvm through the execroot link"
-          cmd.exe //C "dir /AL external\\xla++llvm_extension+llvm-project\\llvm" | head -30 || true
-          echo "--- reparse data of llvm\\lib in the output base"
-          cmd.exe //C "fsutil reparsepoint query D:\\_bazel\\external\\xla++llvm_extension+llvm-project\\llvm\\lib" | head -14 || echo "not a reparse point"
-          echo "--- llvm\\lib in the output base"
-          cmd.exe //C "dir /B D:\\_bazel\\external\\xla++llvm_extension+llvm-project\\llvm\\lib" | head -3 || echo "exit code $?"
-          echo "--- number of junctions"
-          cmd.exe //C "dir /AL /B external" | wc -l
+          echo "--- the links of llvm through the execroot"
+          cmd.exe //C "dir /AL external\\xla++llvm_extension+llvm-project\\llvm" | head -12 || true
+          echo "--- a file below llvm\\lib through the execroot"
+          cmd.exe //C "type external\\xla++llvm_extension+llvm-project\\llvm\\lib\\Analysis\\models\\regalloc-eviction-test-model.inc" | head -3 || echo "exit code $?"
 
       # Loading the library fails early when the build hides `GetPjrtApi`.
       - name: Check the exported entry point
