@@ -94,17 +94,28 @@ jobs:
         timeout-minutes: 320
         run: python build_plugin.py --output library --disk-cache ~/bazel-disk-cache
 
-      # The failed copy action prints nothing, so the step runs its script again by hand.
+      # The failed actions print no reason, so the step runs the same cmd.exe commands by hand.
       - name: Show a failed Windows copy action
         if: failure() && runner.os == 'Windows'
         run: |
           root=$(cd build/jax && bazelisk --output_user_root=C:/b info execution_root 2> /dev/null | sed 's/^execution_root: //' || true)
           cd "$root"
-          script=bazel-out/x64_windows-clang-cl-opt-exec/bin/external/xla++llvm_extension+llvm-project/llvm/generate_regalloc_model1_h-cmd.bat
-          cat "$script" || true
-          cmd.exe //C "$(cygpath -w "$script")" || echo "exit code $?"
-          ls -la external/ | head -5 || true
-          ls -la external/xla++llvm_extension+llvm-project/llvm/lib/Analysis/models | head || true
+          mkdir -p "$TEMP/probe"
+          source='external\xla++llvm_extension+llvm-project\llvm\lib\Analysis\models\regalloc-eviction-test-model.inc'
+          absolute='D:\_bazel\external\xla++llvm_extension+llvm-project\llvm\lib\Analysis\models\regalloc-eviction-test-model.inc'
+          probe=$(cygpath -w "$TEMP/probe")
+          echo "--- dir through the execroot link"
+          cmd.exe //C "dir $source" || echo "exit code $?"
+          echo "--- dir at the absolute path"
+          cmd.exe //C "dir $absolute" || echo "exit code $?"
+          echo "--- type through the execroot link"
+          cmd.exe //C "type $source > NUL" || echo "exit code $?"
+          echo "--- copy through the execroot link"
+          cmd.exe //C "copy /Y \"$source\" \"$probe\\a.h\"" || echo "exit code $?"
+          echo "--- copy at the absolute path"
+          cmd.exe //C "copy /Y \"$absolute\" \"$probe\\b.h\"" || echo "exit code $?"
+          echo "--- link type"
+          cmd.exe //C "dir /AL external" | head -8 || true
 
       # Loading the library fails early when the build hides `GetPjrtApi`.
       - name: Check the exported entry point
