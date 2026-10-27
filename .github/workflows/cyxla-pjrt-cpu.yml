@@ -130,13 +130,13 @@ jobs:
           done
           echo "--- the same listing for each repository, in three forms"
           for repo in 'bazel_tools' 'abseil-cpp+' 'xla++llvm_extension+llvm_xz' 'xla++llvm_extension+llvm-project'; do
-            for form in 'external\\REPO\\*' '.\\external\\REPO\\*' 'D:\\_bazel\\execroot\\_main\\external\\REPO\\*'; do
+            for form in 'external\REPO\*' '.\external\REPO\*' 'D:\_bazel\execroot\_main\external\REPO\*'; do
               target="${form//REPO/$repo}"
               if cmd.exe //C "dir /B $target" > /dev/null 2>&1; then echo "ok    $target"; else echo "FAILS $target"; fi
             done
           done
           echo "--- files deeper in the LLVM repository"
-          for sub in 'llvm' 'llvm\\lib' 'llvm\\lib\\Analysis' 'llvm\\lib\\Analysis\\models'; do
+          for sub in 'llvm' 'llvm\lib' 'llvm\lib\Analysis' 'llvm\lib\Analysis\models'; do
             target="external\\xla++llvm_extension+llvm-project\\$sub\\*"
             if cmd.exe //C "dir /B $target" > /dev/null 2>&1; then echo "ok    $target"; else echo "FAILS $target"; fi
           done
