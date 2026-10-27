@@ -140,8 +140,14 @@ jobs:
             target="external\\xla++llvm_extension+llvm-project\\$sub\\*"
             if cmd.exe //C "dir /B $target" > /dev/null 2>&1; then echo "ok    $target"; else echo "FAILS $target"; fi
           done
-          echo "--- type of the file through the link"
-          cmd.exe //C "type external\\xla++llvm_extension+llvm-project\\llvm\\lib\\Analysis\\models\\regalloc-eviction-test-model.inc" | head -3 || echo "exit code $?"
+          echo "--- the entries of llvm in the output base"
+          cmd.exe //C "dir /AL D:\\_bazel\\external\\xla++llvm_extension+llvm-project\\llvm" | head -30 || true
+          echo "--- the entries of llvm through the execroot link"
+          cmd.exe //C "dir /AL external\\xla++llvm_extension+llvm-project\\llvm" | head -30 || true
+          echo "--- reparse data of llvm\\lib in the output base"
+          cmd.exe //C "fsutil reparsepoint query D:\\_bazel\\external\\xla++llvm_extension+llvm-project\\llvm\\lib" | head -14 || echo "not a reparse point"
+          echo "--- llvm\\lib in the output base"
+          cmd.exe //C "dir /B D:\\_bazel\\external\\xla++llvm_extension+llvm-project\\llvm\\lib" | head -3 || echo "exit code $?"
           echo "--- number of junctions"
           cmd.exe //C "dir /AL /B external" | wc -l
 
