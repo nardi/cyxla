@@ -104,31 +104,47 @@ def make_junction(target: Path, link: Path) -> None:
 def localize_links(
     external: Path,
     make_directory_link: Callable[[Path, Path], None],
-    depth: int = 3,
+    probe_depth: int = 2,
 ) -> int:
-    """Replaces the symlinks near the top of each fetched repository and returns their count.
+    """Replaces the symlinks of linked fetched repositories and returns their count.
 
     Repository rules link the LLVM sources into place with relative symlinks. Windows
     resolves a relative symlink against the path it was reached by, and the execroot
     reaches repositories through junctions that exist only for the repositories an action
     names. A link such as `llvm/lib` then points into a repository that the execroot does
-    not link, and every `cmd.exe` action that reads below it fails. A directory link
-    becomes a link with an absolute target, and a file link becomes a copy. The links sit
-    within `depth` directories of the repository root, so deeper directories are skipped.
+    not link, and every action that reads below it fails. A directory link becomes a link
+    with an absolute target, and a file link becomes a copy.
+
+    Downloaded archives hold no links, and walking all of them is slow, so only the
+    repositories with a link within `probe_depth` directories of their root are walked.
     """
     count = 0
     for repository in external.iterdir():
         if repository.is_dir() and not repository.is_symlink():
-            count += localize_directory(repository, make_directory_link, depth)
+            if has_links(repository, probe_depth):
+                count += localize_directory(repository, make_directory_link)
     return count
 
 
+def has_links(directory: Path, depth: int) -> bool:
+    """Returns whether a directory holds a symlink within `depth` levels."""
+    with os.scandir(directory) as scanner:
+        entries = list(scanner)
+    for entry in entries:
+        if entry.is_symlink():
+            return True
+        if depth > 1 and entry.is_dir(follow_symlinks=False):
+            if not os.path.isjunction(entry.path) and has_links(
+                Path(entry.path), depth - 1
+            ):
+                return True
+    return False
+
+
 def localize_directory(
-    directory: Path,
-    make_directory_link: Callable[[Path, Path], None],
-    depth: int,
+    directory: Path, make_directory_link: Callable[[Path, Path], None]
 ) -> int:
-    """Replaces the symlinks in a directory and in the directories below it."""
+    """Replaces the symlinks in a directory and in the real directories below it."""
     count = 0
     with os.scandir(directory) as scanner:
         entries = list(scanner)
@@ -143,9 +159,8 @@ def localize_directory(
                 path.unlink()
                 shutil.copy2(target, path)
             count += 1
-        elif depth > 1 and entry.is_dir(follow_symlinks=False):
-            if not os.path.isjunction(path):
-                count += localize_directory(path, make_directory_link, depth - 1)
+        elif entry.is_dir(follow_symlinks=False) and not os.path.isjunction(path):
+            count += localize_directory(path, make_directory_link)
     return count
 
 

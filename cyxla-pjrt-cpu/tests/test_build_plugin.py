@@ -51,7 +51,7 @@ def test_bazel_package_has_every_library() -> None:
 
 
 def test_localize_links(tmp_path: Path) -> None:
-    """Checks that relative links become absolute links and copies, near the root only."""
+    """Checks that relative links become absolute links and copies in linked repositories."""
     raw = tmp_path / "raw" / "llvm" / "lib"
     raw.mkdir(parents=True)
     (raw / "source.cc").write_text("code")
@@ -60,16 +60,20 @@ def test_localize_links(tmp_path: Path) -> None:
     (repository / "llvm").mkdir(parents=True)
     (repository / "llvm" / "lib").symlink_to(Path("../../../raw/llvm/lib"))
     (repository / "llvm" / "README").symlink_to(Path("../../../raw/llvm/README"))
-    deep = repository / "a" / "b" / "c"
+    deep = repository / "llvm" / "include" / "llvm"
     deep.mkdir(parents=True)
     (deep / "lib").symlink_to(Path("../../../../../raw/llvm/lib"))
+    plain = tmp_path / "external" / "plain" / "a" / "b" / "c"
+    plain.mkdir(parents=True)
+    (plain / "lib").symlink_to(Path("../../../../../raw/llvm/lib"))
 
     def link(target: Path, path: Path) -> None:
         path.symlink_to(target)
 
-    assert build_plugin.localize_links(tmp_path / "external", link) == 2
+    assert build_plugin.localize_links(tmp_path / "external", link) == 3
     assert (repository / "llvm" / "lib").readlink() == raw
     assert (repository / "llvm" / "lib" / "source.cc").read_text() == "code"
     assert not (repository / "llvm" / "README").is_symlink()
     assert (repository / "llvm" / "README").read_text() == "text"
-    assert (deep / "lib").readlink() == Path("../../../../../raw/llvm/lib")
+    assert (deep / "lib").readlink() == raw
+    assert (plain / "lib").readlink() == Path("../../../../../raw/llvm/lib")
