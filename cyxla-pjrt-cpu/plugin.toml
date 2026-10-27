@@ -47,6 +47,20 @@ bazel_options = [
     "--extra_execution_platforms=//jax/tools/toolchains:x64_windows-clang-cl",
     "--compiler=clang-cl",
     "--copt=-Werror=mismatched-tags",
+    # The toolchain that XLA pins for Windows adds these definitions to every compile, and
+    # the local clang-cl toolchain does not. XLA's embedded data generator needs the first.
+    "--copt=/DCOMPILER_MSVC",
+    "--host_copt=/DCOMPILER_MSVC",
+    "--copt=/DNOMINMAX",
+    "--host_copt=/DNOMINMAX",
+    "--copt=/D_CRT_SECURE_NO_DEPRECATE",
+    "--host_copt=/D_CRT_SECURE_NO_DEPRECATE",
+    "--copt=/D_CRT_SECURE_NO_WARNINGS",
+    "--host_copt=/D_CRT_SECURE_NO_WARNINGS",
+    "--copt=/D__PRFCHWINTRIN_H",
+    "--host_copt=/D__PRFCHWINTRIN_H",
+    "--copt=/bigobj",
+    "--host_copt=/bigobj",
     "--config=avx_windows",
     # The quotes keep the space in the path from splitting the option in the rc file.
     '--repo_env=BAZEL_LLVM="C:/Program Files/LLVM"',
