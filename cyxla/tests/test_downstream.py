@@ -63,7 +63,16 @@ def test_downstream_module_runs_programs(tmp_path: Path) -> None:
     }
     meson = meson_executable()
     for command in (
-        [meson, "setup", "--vsenv", str(tmp_path), str(DOWNSTREAM_DIRECTORY)],
+        # A release build, because a debug build of an extension links the debug library
+        # of Python, which Windows installations of Python do not include.
+        [
+            meson,
+            "setup",
+            "--vsenv",
+            "--buildtype=release",
+            str(tmp_path),
+            str(DOWNSTREAM_DIRECTORY),
+        ],
         [meson, "compile", "-C", str(tmp_path)],
         [sys.executable, "-c", textwrap.dedent(DOWNSTREAM_TEST), str(tmp_path)],
     ):
