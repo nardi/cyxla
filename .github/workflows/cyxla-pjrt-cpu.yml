@@ -121,6 +121,13 @@ jobs:
             echo "$part"
             cmd.exe //C "dir /B \"$part\"" | head -3 || echo "exit code $?"
           done
+          echo "--- the entry in the output base"
+          cmd.exe //C "dir /AL D:\\_bazel\\external" | grep -i "llvm-project" || echo "not a link"
+          echo "--- junctions that do resolve"
+          for repo in 'abseil-cpp+' 'xla++llvm_extension+llvm_xz' 'bazel_tools'; do
+            echo "$repo"
+            cmd.exe //C "dir /B \"external\\$repo\"" | head -2 || echo "exit code $?"
+          done
           echo "--- number of junctions"
           cmd.exe //C "dir /AL /B external" | wc -l
 
