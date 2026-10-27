@@ -128,19 +128,20 @@ jobs:
             echo "$repo"
             cmd.exe //C "dir /B \"external\\$repo\"" | head -2 || echo "exit code $?"
           done
-          echo "--- relative forms of the same path"
-          cmd.exe //C "cd external && dir /B bazel_tools" | head -2 || echo "cd into external: exit code $?"
-          cmd.exe //C "dir /B .\\external\\bazel_tools" | head -2 || echo "dot prefix: exit code $?"
-          cmd.exe //C "dir /B external\\bazel_tools\\" | head -2 || echo "trailing slash: exit code $?"
-          cmd.exe //C "dir /B %CD%\\external\\bazel_tools" | head -2 || echo "CD variable: exit code $?"
-          cmd.exe //C "dir /B external\\bazel_tools\\MODULE.bazel" || echo "file: exit code $?"
-          echo "--- is external itself a reparse point"
-          cmd.exe //C "fsutil reparsepoint query external" | head -3 || echo "no"
-          echo "--- a junction made by mklink inside external"
-          cmd.exe //C "mklink /J external\\probe_junction D:\\_bazel\\external\\bazel_tools" || echo "exit code $?"
-          cmd.exe //C "dir /B external\\probe_junction" | head -2 || echo "exit code $?"
-          echo "--- the same through PowerShell"
-          powershell -NoProfile -Command "Get-ChildItem external\\bazel_tools | Select-Object -First 2 | ForEach-Object { \$_.Name }" || echo "exit code $?"
+          echo "--- the same listing for each repository, in three forms"
+          for repo in 'bazel_tools' 'abseil-cpp+' 'xla++llvm_extension+llvm_xz' 'xla++llvm_extension+llvm-project'; do
+            for form in 'external\\REPO\\*' '.\\external\\REPO\\*' 'D:\\_bazel\\execroot\\_main\\external\\REPO\\*'; do
+              target="${form//REPO/$repo}"
+              if cmd.exe //C "dir /B $target" > /dev/null 2>&1; then echo "ok    $target"; else echo "FAILS $target"; fi
+            done
+          done
+          echo "--- files deeper in the LLVM repository"
+          for sub in 'llvm' 'llvm\\lib' 'llvm\\lib\\Analysis' 'llvm\\lib\\Analysis\\models'; do
+            target="external\\xla++llvm_extension+llvm-project\\$sub\\*"
+            if cmd.exe //C "dir /B $target" > /dev/null 2>&1; then echo "ok    $target"; else echo "FAILS $target"; fi
+          done
+          echo "--- type of the file through the link"
+          cmd.exe //C "type external\\xla++llvm_extension+llvm-project\\llvm\\lib\\Analysis\\models\\regalloc-eviction-test-model.inc" | head -3 || echo "exit code $?"
           echo "--- number of junctions"
           cmd.exe //C "dir /AL /B external" | wc -l
 
