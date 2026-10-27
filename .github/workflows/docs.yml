@@ -1,0 +1,59 @@
+name: Docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "cyxla/docs/**"
+      - "cyxla/src/**"
+      - "cyxla/zensical.toml"
+      - "cyxla/pyproject.toml"
+      - ".github/workflows/docs.yml"
+  workflow_dispatch:
+
+# Only one deployment runs at a time, and a newer push replaces a pending one.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: cyxla
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      # The API reference reads the source files, so the package itself is not installed.
+      - name: Sync dependencies
+        run: uv sync --only-group docs
+
+      - name: Build the documentation site
+        run: uv run --no-sync zensical build --strict
+
+      - name: Upload the site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: cyxla/site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      # Deploying to Pages needs write access to Pages and an OIDC token.
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

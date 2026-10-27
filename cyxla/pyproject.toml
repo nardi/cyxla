@@ -19,6 +19,7 @@ tpu = ["libtpu"]
 
 [project.urls]
 Source = "https://github.com/nardi/cyxla/tree/main/cyxla"
+Documentation = "https://nardi.github.io/cyxla/"
 
 [build-system]
 requires = ["meson-python>=0.18", "meson>=1.8", "cython>=3.1"]
@@ -43,6 +44,8 @@ dev = [
 build = ["meson-python>=0.18", "meson>=1.8", "ninja>=1.11", "cython>=3.1"]
 # The CPU plugin, which the tests run programs on. Linting does without it.
 plugin = ["cyxla-pjrt-cpu"]
+# The documentation site. The API reference reads the source, so it needs no build.
+docs = ["zensical>=0.0.73", "mkdocstrings-python>=2"]
 
 [tool.uv]
 default-groups = ["build", "dev", "plugin"]
@@ -54,9 +57,9 @@ config-settings = { setup-args = "-Dcoverage=true" }
 cyxla-pjrt-cpu = { path = "../cyxla-pjrt-cpu" }
 
 [tool.pytest.ini_options]
-# The README is collected by markdown-pytest, which runs code blocks marked with a
-# `<!-- name: test_... -->` comment.
-testpaths = ["tests", "README.md"]
+# The README and the documentation are collected by markdown-pytest, which runs code
+# blocks marked with a `<!-- name: test_... -->` comment.
+testpaths = ["tests", "README.md", "docs"]
 
 [tool.coverage.run]
 branch = true

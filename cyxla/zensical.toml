@@ -1,0 +1,54 @@
+[project]
+site_url = "https://nardi.github.io/cyxla/"
+site_name = "cyxla"
+site_description = "A bridge from JAX to native code through the PJRT C API"
+site_author = "Nardi Lam"
+repo_url = "https://github.com/nardi/cyxla"
+repo_name = "nardi/cyxla"
+
+nav = [
+  { "Introduction" = "index.md" },
+  { "Installation" = "installation.md" },
+  { "Guide" = [
+    { "Running programs" = "guide/running.md" },
+    { "Custom calls" = "guide/custom-calls.md" },
+    { "Extension modules" = "guide/extensions.md" },
+    { "Plugins" = "guide/plugins.md" },
+    { "Caching and memory" = "guide/caching.md" },
+  ] },
+  { "Design" = "design.md" },
+  { "CPU plugin package" = "cpu-plugin.md" },
+  { "API reference" = [
+    { "Programs" = "api/programs.md" },
+    { "Plugins and runtime" = "api/plugins.md" },
+    { "Custom calls" = "api/custom-calls.md" },
+    { "Disk cache" = "api/cache.md" },
+    { "Extension modules" = "api/extension.md" },
+  ] },
+  { "Development" = "development.md" },
+  { "References" = "references.md" },
+]
+
+[project.theme]
+language = "en"
+features = [
+  "content.code.copy",
+  "navigation.sections",
+  "navigation.top",
+  "search.highlight",
+]
+
+[project.plugins.mkdocstrings.handlers.python]
+paths = ["src"]
+
+[project.plugins.mkdocstrings.handlers.python.options]
+docstring_style = "google"
+show_source = false
+filters = ["!^_", "!^wrap$"]
+show_root_heading = true
+show_root_full_path = false
+heading_level = 2
+members_order = "source"
+merge_init_into_class = true
+separate_signature = true
+show_signature_annotations = true

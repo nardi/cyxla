@@ -4,6 +4,7 @@ cyxla lowers JAX functions to StableHLO, compiles them with a PJRT plugin, and r
 from Cython extension modules without the GIL. It came out of
 [JAX-CIP](https://github.com/nardi/jax-cip), whose SCIP callbacks call JAX functions
 thousands of times per second, and it is the base of other packages that do the same.
+The [documentation](https://nardi.github.io/cyxla/) has guides and the API reference.
 
 ## Installation
 
