@@ -114,8 +114,15 @@ jobs:
           cmd.exe //C "copy /Y \"$source\" \"$probe\\a.h\"" || echo "exit code $?"
           echo "--- copy at the absolute path"
           cmd.exe //C "copy /Y \"$absolute\" \"$probe\\b.h\"" || echo "exit code $?"
-          echo "--- link type"
-          cmd.exe //C "dir /AL external" | head -8 || true
+          echo "--- junctions of the llvm repositories"
+          cmd.exe //C "dir /AL external" | grep -i "llvm" || echo "none"
+          echo "--- how far the path resolves through the link"
+          for part in 'external\xla++llvm_extension+llvm-project' 'external\xla++llvm_extension+llvm-project\llvm' 'external\xla++llvm_extension+llvm-project\llvm\lib'; do
+            echo "$part"
+            cmd.exe //C "dir /B \"$part\"" | head -3 || echo "exit code $?"
+          done
+          echo "--- number of junctions"
+          cmd.exe //C "dir /AL /B external" | wc -l
 
       # Loading the library fails early when the build hides `GetPjrtApi`.
       - name: Check the exported entry point
