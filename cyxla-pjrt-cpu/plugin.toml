@@ -52,6 +52,9 @@ bazel_options = [
     '--repo_env=BAZEL_LLVM="C:/Program Files/LLVM"',
     "--host_linkopt=/FORCE:MULTIPLE",
     "--linkopt=/FORCE:MULTIPLE",
+    # The build script replaces links in the fetched repositories, which Bazel would
+    # otherwise take as a modification and fetch the repositories again.
+    "--noexperimental_check_external_repository_files",
     "--config=public_cache",
 ]
 sha256 = ""

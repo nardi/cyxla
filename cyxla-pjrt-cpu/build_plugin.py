@@ -12,10 +12,11 @@ Bazel comes from `bazelisk` or `bazel` on the path. A build takes hours without 
 """
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 import backend
@@ -82,10 +83,7 @@ def startup_options(platform_name: str, source: Path, user_root: str) -> list[st
 
     On Windows, Bazel's output lives under a short path, because the paths of XLA's outputs
     exceed the length limit of Windows otherwise. JAX's CI also passes its Java security
-    file there, which resolves names more reliably. Bazel must not create real symlinks
-    there. The links inside the LLVM repository would be relative, and Windows resolves
-    those against the path of the execroot junction instead of the real path, so they
-    point to repositories that the execroot does not link.
+    file there, which resolves names more reliably.
     """
     if not platform_name.startswith("windows"):
         return []
@@ -94,6 +92,61 @@ def startup_options(platform_name: str, source: Path, user_root: str) -> list[st
         f"--output_user_root={user_root}",
         f"--host_jvm_args=-Djava.security.properties=file:///{security}",
     ]
+
+
+def make_junction(target: Path, link: Path) -> None:
+    """Creates a directory junction at `link` that points to `target`."""
+    import _winapi
+
+    _winapi.CreateJunction(str(target), str(link))
+
+
+def localize_links(
+    external: Path,
+    make_directory_link: Callable[[Path, Path], None],
+    depth: int = 3,
+) -> int:
+    """Replaces the symlinks near the top of each fetched repository and returns their count.
+
+    Repository rules link the LLVM sources into place with relative symlinks. Windows
+    resolves a relative symlink against the path it was reached by, and the execroot
+    reaches repositories through junctions that exist only for the repositories an action
+    names. A link such as `llvm/lib` then points into a repository that the execroot does
+    not link, and every `cmd.exe` action that reads below it fails. A directory link
+    becomes a link with an absolute target, and a file link becomes a copy. The links sit
+    within `depth` directories of the repository root, so deeper directories are skipped.
+    """
+    count = 0
+    for repository in external.iterdir():
+        if repository.is_dir() and not repository.is_symlink():
+            count += localize_directory(repository, make_directory_link, depth)
+    return count
+
+
+def localize_directory(
+    directory: Path,
+    make_directory_link: Callable[[Path, Path], None],
+    depth: int,
+) -> int:
+    """Replaces the symlinks in a directory and in the directories below it."""
+    count = 0
+    with os.scandir(directory) as scanner:
+        entries = list(scanner)
+    for entry in entries:
+        path = Path(entry.path)
+        if entry.is_symlink():
+            target = Path(os.path.realpath(path))
+            if target.is_dir():
+                path.unlink()
+                make_directory_link(target, path)
+            else:
+                path.unlink()
+                shutil.copy2(target, path)
+            count += 1
+        elif depth > 1 and entry.is_dir(follow_symlinks=False):
+            if not os.path.isjunction(path):
+                count += localize_directory(path, make_directory_link, depth - 1)
+    return count
 
 
 def main(arguments: Sequence[str] | None = None) -> int:
@@ -149,6 +202,12 @@ def main(arguments: Sequence[str] | None = None) -> int:
         parsed.dry_run,
     )
     target = f"//{PACKAGE}:{entry['library']}"
+    if platform_name.startswith("windows"):
+        run([bazel, *startup, "build", "--nobuild", target], source, parsed.dry_run)
+        output_base = run([bazel, *startup, "info", "output_base"], source, parsed.dry_run)
+        if not parsed.dry_run:
+            external = Path(output_base.strip()) / "external"
+            print(f"Localized {localize_links(external, make_junction)} links.")
     run([bazel, *startup, "build", target], source, parsed.dry_run)
     files = run(
         [bazel, *startup, "cquery", "--output=files", target], source, parsed.dry_run
