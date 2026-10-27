@@ -1,10 +1,9 @@
 # Extension modules
 
-An extension module is where cyxla pays off. It cimports the runtime and calls
-`execute`, which runs an executable from C with no GIL, so a solver can call it from any
-thread of its callbacks.
+An extension module cimports the runtime and calls `execute`, which runs an executable
+from C without the GIL. A solver can then call it from the threads of its callbacks.
 
-## What `execute` does
+## The `execute` function
 
 `execute` takes a `ProgramSpec` for the executable and an array of `Input` structs. Each
 input is a host array of doubles. On the CPU the plugin reads the arrays in place, so
@@ -37,7 +36,7 @@ structs such as `ProgramSpec`. `ABI_VERSION` increases whenever a declaration ch
 A downstream package lists `cyxla` in `build-system.requires`, pinned to a narrow range,
 because a new version may change the declarations.
 
-## Building
+## Build setup
 
 The build needs the PJRT header and the `.pxd` files, and `cyxla.get_include()` returns
 their directories. The first is for the C compiler and the second is for Cython. A Meson
@@ -57,5 +56,5 @@ builds this way and runs a program.
 
 `execute` returns -1 when something fails, and 0 otherwise. The `zero_copy` argument
 asks for the aliased buffers, and it falls back to copies on a plugin that cannot alias
-host memory. An output whose destination is NULL is dropped. After a failure,
-`error_info()` gives the number of PJRT errors so far and the last message.
+host memory. An output whose destination is `NULL` is dropped. After a failure,
+`error_info()` returns the number of PJRT errors so far and the last message.

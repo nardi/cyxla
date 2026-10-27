@@ -1,10 +1,10 @@
-# Running programs
+# Programs
 
 A program goes through three steps. `lower` turns a JAX function into StableHLO,
 `compile_program` turns that into an executable for the loaded plugin, and the
 executable runs on host arrays.
 
-## Lowering
+## Lowered programs
 
 `lower` takes the function and the shapes of its arguments. It traces the function with
 `jax.export`, so everything that JAX traces works, and it returns a
@@ -37,7 +37,7 @@ program = cx.lower(energy, shapes)
 print(program.text.splitlines()[0])
 ```
 
-Call `enable_x64` before lowering, since the buffers hold float64 values. The function
+Call `enable_x64` before lowering, since the buffers hold `float64` values. The function
 may have unused arguments. They stay in the signature, because callers pass every input
 of a program.
 
@@ -46,7 +46,7 @@ loaded. The `platform` argument lowers for another one, for instance to prepare 
 on a machine without a GPU. A function that calls custom calls needs their names in
 `custom_calls`, as the [custom calls](custom-calls.md) page explains.
 
-## Compiling
+## Compilation
 
 `compile_program` returns the executable and the
 [`CompileStatistics`][cyxla.CompileStatistics] of the call. By default it keeps the
@@ -59,11 +59,11 @@ executable, statistics = cx.compile_program(program, disk_cache=False)
 print(statistics.compiled, executable.num_outputs)
 ```
 
-## Running
+## Execution from Python
 
 `Executable.run` takes one array per argument and the number of values in each output.
 Every array is flattened in row-major order and converted to float64, and the outputs
-come back flat.
+are returned flat.
 
 <!-- name: test_docs_running -->
 ```python
@@ -80,7 +80,7 @@ module](extensions.md) reuses the buffers and takes no GIL.
 
 ## Platforms and dtypes
 
-The runtime supports float64 buffers only. Integer or complex values may appear inside a
-program, but its arguments and results have to be float64. A function with complex
+The runtime supports `float64` buffers only. Integer or complex values may appear inside
+a program, but its arguments and results have to be `float64`. A function with complex
 results, such as the eigenvalues of `jnp.linalg.eig`, converts them to real parts inside
-the function. TPUs do not support float64, so programs for them fail to compile.
+the function. TPUs do not support `float64`, so programs for them fail to compile.

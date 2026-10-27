@@ -15,7 +15,7 @@ cache stores. Custom calls are the exception, since the export only knows compat
 guarantees for the kernels that JAX ships, as the [custom calls](guide/custom-calls.md)
 page describes.
 
-## Compiling through PJRT
+## Compilation through PJRT
 
 [PJRT](https://openxla.org/xla/pjrt/pjrt_integration) is the interface between
 frameworks and XLA's runtimes. A plugin exports one function, `GetPjrtApi`, that returns
@@ -29,21 +29,20 @@ code works with the CPU, CUDA, ROCm and TPU plugins. The runtime needs only a sm
 of the interface: clients, buffers from host memory, executables, events and errors,
 plus the FFI extension for custom calls.
 
-## Executing without copies
+## Execution without copies
 
 The CPU plugin can alias host memory. Input buffers made with `kImmutableZeroCopy` point
 at the arrays that the extension module owns, and the module fills them in place before
 each call. The outputs of the CPU plugin live in host memory too, so the module reads
-them where they are. An execution therefore copies nothing. The arrays are 64-byte
-aligned because the plugin only aliases aligned memory. When a plugin cannot alias,
-which includes all GPU plugins, `execute` copies inputs to the device and outputs back.
+them where they are. An execution therefore copies nothing. The arrays are aligned to 64
+bytes, because the plugin only aliases aligned memory. When a plugin cannot alias, which
+includes all GPU plugins, `execute` copies inputs to the device and outputs back.
 
-Executions wait on the plugin's events inside `execute`, and the CPU client dispatches
-synchronously, so a call runs on the calling thread. A solver may call `execute` from
-several threads of its own only if it serializes them, since the runtime's state is
-shared.
+`execute` waits on the plugin's events, and the CPU client dispatches synchronously, so
+a call runs on the calling thread. A solver can call `execute` from several threads only
+if it serializes the calls, because the runtime's state is shared.
 
-## Why a separate plugin package
+## The separate plugin package
 
 jaxlib links its CPU client statically, so it ships no library that implements the PJRT
 interface for the CPU. [cyxla-pjrt-cpu](cpu-plugin.md) builds XLA's plugin from the
@@ -54,7 +53,7 @@ plugins are already separate libraries, and cyxla loads them as they are.
 
 XLA looks up a custom call's target in a registry inside the plugin when it compiles.
 The registry of the plugin is not the one in jaxlib, even when both are XLA, so cyxla
-registers handlers through the PJRT FFI extension. A registration passes the address of
+registers handlers through the PJRT FFI extension. A registration holds the address of
 an `XLA_FFI_Handler`, which the plugin calls once to read the handler's metadata.
 jaxlib's handlers and the handlers of third-party libraries are the same kind of
 function, so both register the same way.

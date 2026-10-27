@@ -1,6 +1,6 @@
 """Discovery and loading of PJRT plugins.
 
-Plugins come from four places, which `available_plugins` checks in this order.
+Plugins come from three places, which `available_plugins` checks in this order.
 
 1. Distributions with an entry point in the `cyxla.plugins` group, such as
    `cyxla-pjrt-cpu`. The entry point names a module that matches `PluginModule`.

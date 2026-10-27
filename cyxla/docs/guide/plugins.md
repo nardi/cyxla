@@ -3,7 +3,7 @@
 A plugin is a shared library that implements the PJRT C API for one kind of hardware.
 `initialize` loads one plugin per process and creates its client on the first device.
 
-## Choosing a plugin
+## Plugin selection
 
 Without arguments, `cx.initialize()` takes the CPU plugin if one is installed, then
 CUDA, ROCm and TPU in that order. A platform name asks for one, and a path loads a
@@ -15,13 +15,17 @@ from pathlib import Path
 import cyxla as cx
 
 cx.initialize(platform="cuda")
-# or
+```
+
+A path loads that library, and `platform` then names the platform that it implements.
+
+```python
 cx.initialize(Path("libpjrt.so"), platform="cpu")
 ```
 
 `python -m cyxla` lists every plugin that it finds and where it came from. A process
 loads one plugin, so later calls return the details of the first.
-[`runtime_info`][cyxla.runtime_info] tells the platform, the PJRT API version, and
+[`runtime_info`][cyxla.runtime_info] returns the platform, the PJRT API version, and
 whether executions avoid copies.
 
 ## Options
@@ -38,7 +42,7 @@ thread. The GPU clients do not preallocate most of the device memory, as JAX doe
 default. Before it loads JAX's CUDA plugin, cyxla loads the CUDA libraries of the
 `nvidia` wheels, the same way JAX does.
 
-## Providing a plugin
+## Plugin packages
 
 Other packages can offer a plugin with an entry point in the `cyxla.plugins` group. The
 entry point names a module with `PLATFORM`, `CREATE_OPTIONS` and `library_path()`, as

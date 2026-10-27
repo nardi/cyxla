@@ -139,7 +139,8 @@ targets that the function may call.
 
 ```python
 cx.mirror_jax_registrations()
-import my_library  # Registers its handlers with JAX, and now with the plugin.
+# The library registers its handlers with JAX, and now with the plugin too.
+import my_library
 
 program = cx.lower(my_library.function, shapes, custom_calls=["my_target"])
 ```
@@ -167,11 +168,11 @@ distributions that the caller names.
 
 ## Limitations
 
-- Buffers hold float64 values only. TPUs do not support float64, so programs for them
-  fail to compile.
+- Buffers hold `float64` values only. TPUs do not support `float64`, so programs for
+  them fail to compile.
 - Custom calls need a typed FFI handler. Untyped custom calls and Python callbacks do
   not work, and functions with complex inputs or outputs, such as the eigenvalues of
-  `jnp.linalg.eig`, must turn them into float64 values inside the function.
+  `jnp.linalg.eig`, must turn them into `float64` values inside the function.
 - The GPU and TPU paths are tested up to client creation. CI has no GPU, so execution on
   one is untested.
 - On Windows only the CPU plugin exists, since JAX publishes no native GPU plugins

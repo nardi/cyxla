@@ -13,7 +13,7 @@ themselves.
 
 ## Linear algebra
 
-`initialize` registers the typed FFI handlers of jaxlib with the plugin and loads the
+`initialize` will register the typed FFI handlers of jaxlib with the plugin and load the
 LAPACK functions of SciPy that they call. Programs with `cholesky`, `solve`, `inv`,
 `det`, `slogdet`, `qr`, `eigh`, `svd`, `lstsq`, `pinv`, `eigvals`, `lu`,
 `solve_triangular`, `expm`, `schur` and the other functions of `jnp.linalg` and
@@ -80,7 +80,8 @@ earlier is not covered, and neither are handlers of the untyped interface.
 
 ```python
 cx.mirror_jax_registrations()
-import my_library  # Registers its handlers with JAX, and now with the plugin.
+# The library registers its handlers with JAX, and now with the plugin too.
+import my_library
 ```
 
 A handler registers for one platform, and registrations for another platform than the
@@ -88,11 +89,11 @@ plugin's wait unused. Handlers that need other stages than `execute`, such as an
 `instantiate` stage for state, are refused, because the PJRT interface takes one
 function.
 
-## Lowering a function with a custom call
+## Custom calls in lowered functions
 
 `jax.export` refuses custom calls that it has no compatibility promise for, and that
 includes every target of a third-party library. Name the targets that the function may
-call, and lowering goes ahead.
+call, and lowering succeeds.
 
 ```python
 def scaled(x):
@@ -104,10 +105,10 @@ program = cx.lower(scaled, shapes, custom_calls=["my_target"])
 ```
 
 The compiled executable refers to the handler by name. The disk cache therefore stays
-valid when a library updates its handler. The key of a *lowered* program only changes
-when the caller adds the library to the distributions of `cache_key`.
+valid when a library updates its handler. The key of a lowered program only changes when
+the caller adds the library to the distributions of `cache_key`.
 
-## What does not run
+## Unsupported calls
 
 - Handlers of the untyped interface (`api_version=0`) fail to compile with an error
   about the API version.
@@ -115,5 +116,5 @@ when the caller adds the library to the distributions of `cache_key`.
   the plugin cannot do. JAX refuses to serialize them.
 - A target that nobody registered fails to compile with "No FFI handler registered for"
   and the target name, followed by a reminder of the two ways above.
-- Arguments and results must be float64, so functions with complex results convert them
-  inside the function.
+- Arguments and results must be `float64`, so functions with complex results convert
+  them inside the function.

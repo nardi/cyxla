@@ -21,7 +21,7 @@ so neither does this package.
 
 The version of the package is the version of the JAX release whose XLA it contains.
 
-## How it is built
+## The build
 
 `build_plugin.py` checks out JAX at the release in `plugin.toml`. That release's
 `MODULE.bazel` pins the XLA commit, with JAX's patches. JAX's own `build/build.py`
@@ -31,14 +31,14 @@ targets in `bazel/BUILD.bazel` with them. The targets link the same CPU client a
 that has default visibility. jaxlib compiles with hidden visibility, which would hide
 XLA's own definition of `GetPjrtApi`.
 
-Windows needs extra steps. The build uses the clang-cl and the MSVC of the machine, and
-it passes the definitions that XLA's pinned Windows toolchain adds to every compile.
-Bazel's repository rules link the LLVM sources with relative symlinks, which Windows
-resolves against the wrong path, so the build script replaces them with junctions before
-it builds.
+On Windows the build also uses the clang-cl compiler and the MSVC libraries of the
+machine, and it passes the definitions that XLA's pinned Windows toolchain adds to every
+compile. Bazel's repository rules link the LLVM sources with relative symlinks, which
+Windows resolves against the wrong path, so the build script replaces them with
+junctions before it builds.
 
-A build takes hours without a cache. The workflow reads the public cache of jaxlib and
-keeps its own disk cache between runs. The cold Windows build took about three hours.
+A build without a cache takes hours, and a cold Windows build took about three hours.
+The workflow reads the public cache of jaxlib and keeps its own disk cache between runs.
 
 ## Wheels
 

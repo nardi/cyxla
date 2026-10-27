@@ -1,4 +1,4 @@
-# Caching and memory
+# Cache and memory
 
 Lowering a function and compiling it dominate the start-up of a program, and neither
 changes between runs. cyxla keeps both results on disk.

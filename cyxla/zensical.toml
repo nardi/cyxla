@@ -10,11 +10,11 @@ nav = [
   { "Introduction" = "index.md" },
   { "Installation" = "installation.md" },
   { "Guide" = [
-    { "Running programs" = "guide/running.md" },
+    { "Programs" = "guide/running.md" },
     { "Custom calls" = "guide/custom-calls.md" },
     { "Extension modules" = "guide/extensions.md" },
     { "Plugins" = "guide/plugins.md" },
-    { "Caching and memory" = "guide/caching.md" },
+    { "Cache and memory" = "guide/caching.md" },
   ] },
   { "Design" = "design.md" },
   { "CPU plugin package" = "cpu-plugin.md" },

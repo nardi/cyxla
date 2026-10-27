@@ -28,9 +28,9 @@ The CUDA extras install the plugin package of JAX instead of only its PJRT libra
 because the linear algebra kernels of the GPU plugins live there. Windows has the CPU
 plugin only, since JAX publishes no native GPU plugins for it.
 
-## Building from source
+## Source builds
 
-An sdist builds with Meson, Cython and a C compiler. On Windows the build uses MSVC.
+An sdist builds with Meson, Cython and a C compiler, which is MSVC on Windows.
 
 ```bash
 git clone https://github.com/nardi/cyxla

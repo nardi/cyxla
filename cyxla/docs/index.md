@@ -8,8 +8,8 @@ The use case is a native library that calls back into a function thousands of ti
 second. A solver such as SCIP or Ipopt asks for values, gradients and Hessians of a
 model, and calling Python for each of them costs more than the evaluation itself. With
 cyxla the model is a JAX function, and the solver's callbacks run its compiled
-executable directly. cyxla came out of [JAX-CIP](https://nardi.github.io/jax-cip/),
-which does this for SCIP, and other packages build on it too.
+executable directly. [JAX-CIP](https://nardi.github.io/jax-cip/) uses cyxla to do this
+for SCIP.
 
 ## Installation
 
@@ -47,11 +47,11 @@ executable, statistics = cx.compile_program(program)
 assert np.allclose(result, 2 * np.sin([0.0, 1.0, 2.0]))
 ```
 
-`Executable.run` suits tests and interactive checks. The speed comes from the `execute`
-function that extension modules call, which the [extension modules](guide/extensions.md)
-guide describes.
+`Executable.run` is meant for tests and interactive checks. Extension modules call the
+`execute` function instead, which the [extension modules](guide/extensions.md) guide
+describes.
 
-## What it covers
+## Supported programs
 
 - Any function that JAX lowers to StableHLO runs, including control flow such as
   `lax.scan`, and `jnp.linalg` through the [LAPACK kernels of
@@ -65,7 +65,7 @@ guide describes.
 
 ## Limits
 
-Buffers hold float64 values only, which TPUs do not support. Python callbacks and the
+Buffers hold `float64` values only, which TPUs do not support. Python callbacks and the
 untyped custom calls of older libraries do not run on the plugins. The GPU and TPU paths
 are tested only up to creating the client, because CI has no such hardware. The [custom
 calls](guide/custom-calls.md) page covers what works there.

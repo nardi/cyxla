@@ -59,12 +59,13 @@ trusted publishing.
 
 ## Documentation
 
-The site uses [Zensical](https://zensical.org/). Build it from `cyxla/` with
+The site uses [Zensical](https://zensical.org/). A build from `cyxla/` looks like this:
 
 ```bash
 uv sync --only-group docs
 uv run --no-sync zensical build --strict
 ```
 
-The workflow `docs.yml` publishes it to GitHub Pages on every push to `main`. The API
-reference comes from the docstrings by `mkdocstrings`, so a docstring is documentation.
+The workflow `docs.yml` publishes it to GitHub Pages on every push to `main`.
+`mkdocstrings` generates the API reference from the docstrings, so each docstring is
+also documentation.
