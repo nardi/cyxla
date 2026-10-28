@@ -199,6 +199,12 @@ uv run pytest
 archive once. Development builds trace lines in the Cython module, so its coverage is
 measured too. The tests need 100% coverage.
 
+CI has no GPU, so [`notebooks/colab_gpu_tests.ipynb`](notebooks/colab_gpu_tests.ipynb)
+runs the CUDA plugin on a Colab GPU.
+
+[![Open In
+Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/nardi/cyxla/blob/main/cyxla/notebooks/colab_gpu_tests.ipynb)
+
 ## License
 
 [Hippocratic License 3.0](LICENSE.md). The vendored PJRT header is under XLA's Apache

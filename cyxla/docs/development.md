@@ -34,6 +34,8 @@ uv run ty check
   holds the disk cache and `_ffi.py` registers custom call handlers.
 - `tests/downstream` is a small package that builds against an installed cyxla, and
   `tests/ffi_library` is a C++ handler for the custom call tests.
+- `notebooks/colab_gpu_tests.ipynb` runs the checks on a CUDA GPU, which CI does not
+  have.
 
 ## Conventions
 
