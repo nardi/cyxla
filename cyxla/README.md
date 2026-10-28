@@ -54,9 +54,9 @@ assert np.allclose(factor, np.linalg.cholesky(matrix))
 ```
 
 The first function that needs a plugin loads the default one, so a program needs no
-setup call. JAX lowers to 32-bit types, but `cx.lower` switches to 64 bits for a
-function with a 64-bit argument. Arguments and results can be `bool`, 8 to 64-bit
-integers, `float16`, `bfloat16`, `float32`, `float64`, `complex64` and `complex128`.
+setup call. JAX lowers to 32-bit types unless `jax.enable_x64` is on, as it does without
+cyxla. Arguments and results can be `bool`, 8 to 64-bit integers, `float16`, `bfloat16`,
+`float32`, `float64`, `complex64` and `complex128`.
 
 `Executable.run` returns arrays with the shapes and dtypes of the outputs, and converts
 arguments to the types that the program takes. It is for tests and interactive checks.

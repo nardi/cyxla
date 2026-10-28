@@ -7,7 +7,7 @@ import pytest
 from conftest import run_python
 
 import cyxla as cx
-from cyxla._lowering import array_type, is_wide, lowering_platform
+from cyxla._lowering import array_type, lowering_platform
 
 SHAPES = (jax.ShapeDtypeStruct((3,), jnp.float64),)
 """Arguments of the lowered test functions."""
@@ -79,28 +79,21 @@ def test_lowering_before_initialization() -> None:
     assert result.returncode == 0, result.stderr
 
 
-def test_wide_arguments_lower_in_64_bit_mode() -> None:
-    """Checks that 64-bit arguments keep their dtype and that the setting is restored."""
+def test_64_bit_shapes_follow_the_setting_of_jax() -> None:
+    """Checks that a `float64` shape lowers to 64 bits only while JAX's 64-bit mode is on."""
     result = run_python(
         """
+        import warnings
+
         import jax, jax.numpy as jnp
         import cyxla as cx
 
-        assert not jax.config.jax_enable_x64
-        for dtype in (jnp.float64, jnp.int64, jnp.uint64, jnp.complex128):
-            program = cx.lower(lambda x: x, (jax.ShapeDtypeStruct((2,), dtype),))
-            assert program.input_types[0].dtype == dtype, program.input_types
-            assert not jax.config.jax_enable_x64
-        program = cx.lower(lambda x: x, (jax.ShapeDtypeStruct((2,), jnp.complex64),))
-        assert program.input_types[0].dtype == jnp.complex64
+        shapes = (jax.ShapeDtypeStruct((2,), jnp.float64),)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            assert cx.lower(lambda x: x, shapes).input_types[0].dtype == jnp.float32
+        with jax.enable_x64(True):
+            assert cx.lower(lambda x: x, shapes).input_types[0].dtype == jnp.float64
         """
     )
     assert result.returncode == 0, result.stderr
-
-
-def test_is_wide() -> None:
-    """Checks which dtypes switch lowering to 64-bit mode, including ones that are not NumPy's."""
-    assert is_wide(jax.ShapeDtypeStruct((1,), jnp.float64))
-    assert not is_wide(jax.ShapeDtypeStruct((1,), jnp.float32))
-    assert not is_wide(jax.ShapeDtypeStruct((1,), jnp.complex64))
-    assert not is_wide(jax.ShapeDtypeStruct((), jax.random.key(0).dtype))

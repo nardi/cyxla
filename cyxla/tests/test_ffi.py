@@ -123,6 +123,7 @@ def test_programs_need_registered_targets_without_jax_targets() -> None:
         import jax, jax.numpy as jnp
         import cyxla as cx
 
+        jax.config.update("jax_enable_x64", True)
         cx.initialize(platform="cpu", jax_targets=False)
         program = cx.lower(jnp.linalg.cholesky, (jax.ShapeDtypeStruct((3, 3), jnp.float64),))
         try:
@@ -415,6 +416,8 @@ def test_handlers_registered_before_cyxla_are_found(
         jax.ffi.register_ffi_target("early_scale", capsule, platform="cpu")
 
         import cyxla as cx
+
+        jax.config.update("jax_enable_x64", True)
 
         def function(x):
             call = jax.ffi.ffi_call("early_scale", jax.ShapeDtypeStruct(x.shape, x.dtype))

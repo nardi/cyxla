@@ -28,20 +28,18 @@ def energy(positions, charges):
 
 
 shapes = [
-    jax.ShapeDtypeStruct((4, 2), jnp.float64),
-    jax.ShapeDtypeStruct((4,), jnp.float64),
+    jax.ShapeDtypeStruct((4, 2), jnp.float32),
+    jax.ShapeDtypeStruct((4,), jnp.float32),
 ]
 program = cx.lower(energy, shapes)
 print(program.text.splitlines()[0])
 ```
 
-An argument of a 64-bit type (`float64`, `int64`, `uint64` or `complex128`) makes
-`lower` trace the function in the 64-bit mode of JAX, whatever the setting of the
-process is, and restore the setting afterwards. Otherwise JAX lowers to 32-bit types. A
-function that creates 64-bit values out of 32-bit arguments needs `jax.enable_x64`
-first. The `input_types` of the program record the dtype and shape of each argument. The
-function may have unused arguments. They stay in the signature, because callers pass
-every input of a program.
+`lower` traces the function with the current setting of `jax.enable_x64`, as JAX does. A
+`float64` shape lowers to `float32` while the setting is off, so 64-bit programs need it
+on, either globally or as a context manager around the call. The `input_types` of the
+program record the dtype and shape of each argument. The function may have unused
+arguments. They stay in the signature, because callers pass every input of a program.
 
 Lowering targets the platform of the loaded plugin, or the CPU before any plugin is
 loaded. The `platform` argument lowers for another one, for instance to prepare programs
