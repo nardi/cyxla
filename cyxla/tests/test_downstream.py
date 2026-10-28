@@ -24,10 +24,9 @@ sys.path.insert(0, sys.argv[1])
 import downstream_square
 
 assert downstream_square.COMPILED_ABI_VERSION == cx.ABI_VERSION
-cx.enable_x64()
-cx.initialize(platform="cpu")
-program = cx.lower(lambda x: x**2 + 1, (jax.ShapeDtypeStruct((3,), jnp.float64),))
+program = cx.lower(lambda x: x**2 + 1, (jax.ShapeDtypeStruct((3,), jnp.float32),))
 executable, _ = cx.compile_program(program, disk_cache=False)
+assert executable.output_bytes == (12,)
 for zero_copy in (True, False):
     result = downstream_square.run(executable, [1.0, 2.0, 3.0], zero_copy)
     assert result == [2.0, 5.0, 10.0], result

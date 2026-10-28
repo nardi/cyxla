@@ -42,7 +42,7 @@ from cyxla._runtime import (
     is_initialized,
     runtime_info,
 )
-from cyxla._types import ErrorInfo, OptionValue, Plugin, RuntimeInfo
+from cyxla._types import ArrayType, ErrorInfo, OptionValue, Plugin, RuntimeInfo
 
 __version__ = importlib.metadata.version("cyxla")
 
@@ -79,6 +79,7 @@ __all__ = [
     "CACHE_ENVIRONMENT_VARIABLE",
     "PLATFORM_ENVIRONMENT_VARIABLE",
     "PLUGIN_ENVIRONMENT_VARIABLE",
+    "ArrayType",
     "CompileStatistics",
     "ErrorInfo",
     "Executable",

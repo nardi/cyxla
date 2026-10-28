@@ -13,7 +13,7 @@ themselves.
 
 ## Linear algebra
 
-`initialize` will register the typed FFI handlers of jaxlib with the plugin and load the
+Loading the plugin will register the typed FFI handlers of jaxlib with it and load the
 LAPACK functions of SciPy that they call. Programs with `cholesky`, `solve`, `inv`,
 `det`, `slogdet`, `qr`, `eigh`, `svd`, `lstsq`, `pinv`, `eigvals`, `lu`,
 `solve_triangular`, `expm`, `schur` and the other functions of `jnp.linalg` and
@@ -27,8 +27,6 @@ import numpy as np
 
 import cyxla as cx
 
-cx.enable_x64()
-cx.initialize()
 matrix = np.array([[4.0, 1.0], [1.0, 3.0]])
 
 
@@ -36,11 +34,13 @@ def solve(a):
     return jnp.linalg.solve(a, jnp.array([1.0, 2.0]))
 
 
-program = cx.lower(solve, [jax.ShapeDtypeStruct((2, 2), jnp.float64)])
+program = cx.lower(solve, [jax.ShapeDtypeStruct((2, 2), jnp.float32)])
 executable, _ = cx.compile_program(program)
-(solution,) = executable.run([matrix], output_sizes=[2])
+(solution,) = executable.run([matrix])
 assert np.allclose(matrix @ solution, [1.0, 2.0])
 ```
+
+The eigenvalues of `eig` and `eigvals` come back as complex arrays.
 
 Pass `jax_targets=False` to `initialize` to register none of them. Handlers of the older
 untyped interface are never registered, because the plugin cannot run them.
@@ -116,5 +116,3 @@ the caller adds the library to the distributions of `cache_key`.
   the plugin cannot do. JAX refuses to serialize them.
 - A target that nobody registered fails to compile with "No FFI handler registered for"
   and the target name, followed by a reminder of the two ways above.
-- Arguments and results must be `float64`, so functions with complex results convert
-  them inside the function.

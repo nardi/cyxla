@@ -1,12 +1,34 @@
 """Records shared by the extension module and the Python layer."""
 
+import math
 from collections.abc import Mapping
 from pathlib import Path
 from types import MappingProxyType
 from typing import NamedTuple
 
+import numpy as np
+
 OptionValue = bool | int | float | str | tuple[int, ...]
 """A value of a `PJRT_Client_Create` option, one of the types of `PJRT_NamedValue`."""
+
+
+class ArrayType(NamedTuple):
+    """The element type and shape of an argument or result of a program."""
+
+    dtype: np.dtype
+    """Type of the elements, one of the dtypes that the runtime supports."""
+    shape: tuple[int, ...]
+    """Length of each axis, empty for a scalar."""
+
+    @property
+    def size(self) -> int:
+        """Returns the number of elements."""
+        return math.prod(self.shape)
+
+    @property
+    def nbytes(self) -> int:
+        """Returns the size of the array in bytes."""
+        return self.size * self.dtype.itemsize
 
 
 class RuntimeInfo(NamedTuple):

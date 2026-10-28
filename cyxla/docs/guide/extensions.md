@@ -6,14 +6,19 @@ from C without the GIL. A solver can then call it from the threads of its callba
 ## The `execute` function
 
 `execute` takes a `ProgramSpec` for the executable and an array of `Input` structs. Each
-input is a host array of doubles. On the CPU the plugin reads the arrays in place, so
-the module fills them and no copy happens. The outputs are read from the buffers' memory
-too. On other platforms every execution copies its inputs to the device and its outputs
-back.
+input is a host array with a PJRT element type from `cyxla._pjrt`, such as
+`PJRT_Buffer_Type_F32`, and its number of elements. On the CPU the plugin reads the
+arrays in place, so the module fills them and no copy happens. The outputs are read from
+the buffers' memory too, and each destination holds the bytes in
+`ProgramSpec.output_bytes`. On other platforms every execution copies its inputs to the
+device and its outputs back.
 
-Host arrays come from `aligned_doubles` and go back with `free_doubles`. They are
-aligned to 64 bytes, which the plugin needs to alias them. The pair exists because
-Windows frees aligned memory with a function other than `free`.
+Host arrays come from `aligned_memory`, which takes a size in bytes, and go back with
+`free_aligned`. They are aligned to 64 bytes, which the plugin needs to alias them. The
+pair exists because Windows frees aligned memory with a function other than `free`.
+`itemsize` returns the size of one element of a type. The element types and shapes of
+the outputs are in `Executable.output_types`, and their sizes are in
+`Executable.output_bytes`.
 
 The declarations live in `cyxla/_runtime.pxd`. The module must not use the runtime from
 two threads at once, since its state is shared.

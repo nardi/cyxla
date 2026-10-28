@@ -191,7 +191,7 @@ def register_jax_targets(platform: str | None = None) -> int:
     the older untyped interface are left out, as the plugin cannot run them. A plugin
     without FFI support gets none.
     """
-    _runtime.require_runtime()
+    _runtime.ensure_initialized()
     if not _runtime.supports_ffi():
         return 0
     chosen = platform_key(platform or _runtime.runtime_info().platform)

@@ -36,11 +36,9 @@ import numpy as np
 
 import cyxla as cx
 
-cx.enable_x64()
-cx.initialize()
-program = cx.lower(lambda x: jnp.sin(x) * 2, [jax.ShapeDtypeStruct((3,), jnp.float64)])
+program = cx.lower(lambda x: jnp.sin(x) * 2, [jax.ShapeDtypeStruct((3,), jnp.float32)])
 executable, statistics = cx.compile_program(program)
-(result,) = executable.run([np.array([0.0, 1.0, 2.0])], output_sizes=[3])
+(result,) = executable.run([np.array([0.0, 1.0, 2.0])])
 ```
 
 The linear algebra of `jnp.linalg` works the same way, as the section on custom calls
@@ -49,14 +47,21 @@ explains:
 <!-- name: test_readme -->
 ```python
 matrix = np.array([[4.0, 1.0], [1.0, 3.0]])
-program = cx.lower(jnp.linalg.cholesky, [jax.ShapeDtypeStruct((2, 2), jnp.float64)])
+program = cx.lower(jnp.linalg.cholesky, [jax.ShapeDtypeStruct((2, 2), jnp.float32)])
 executable, _ = cx.compile_program(program)
-(factor,) = executable.run([matrix], output_sizes=[4])
-assert np.allclose(factor.reshape(2, 2), np.linalg.cholesky(matrix))
+(factor,) = executable.run([matrix])
+assert np.allclose(factor, np.linalg.cholesky(matrix))
 ```
 
-`Executable.run` is for tests and interactive checks. Extension modules call `execute`
-from `cyxla/_runtime.pxd` instead, as the next section shows.
+The first function that needs a plugin loads the default one, so a program needs no
+setup call. JAX lowers to 32-bit types unless `cx.enable_x64()` switches it to 64 bits.
+Arguments and results can be `bool`, 8 to 64-bit integers, `float16`, `bfloat16`,
+`float32`, `float64`, `complex64` and `complex128`.
+
+`Executable.run` returns arrays with the shapes and dtypes of the outputs, and converts
+arguments to the types that the program takes. It is for tests and interactive checks.
+Extension modules call `execute` from `cyxla/_runtime.pxd` instead, as the next section
+shows.
 
 ## Extension modules
 
@@ -79,8 +84,11 @@ cyxla.check_abi(ABI_VERSION)
 version. Cython checks the signatures of shared functions itself, but not the layout of
 structs such as `ProgramSpec`.
 
-Host arrays for inputs come from `aligned_doubles` and go back with `free_doubles`. The
-pair exists because Windows frees aligned memory with a function other than `free`.
+Host arrays for inputs come from `aligned_memory`, which takes a size in bytes, and go
+back with `free_aligned`. The pair exists because Windows frees aligned memory with a
+function other than `free`. Each `Input` names the PJRT element type of its array, such
+as `PJRT_Buffer_Type_F32` from `cyxla._pjrt`, and `ProgramSpec.output_bytes` holds the
+size of each output, which `Executable.output_bytes` returns.
 
 The build needs the PJRT header and the `.pxd` files, and `cyxla.get_include()` returns
 their directories. A Meson build reads them like this, and `tests/downstream` is a
@@ -98,8 +106,9 @@ range, because a new version may change the declarations.
 
 ## Plugins
 
-`cx.initialize()` loads one plugin per process. Without arguments it takes the CPU
-plugin if one is installed, then CUDA, ROCm and TPU in that order.
+A process loads one plugin, and the first function that needs it loads the CPU plugin if
+one is installed, then CUDA, ROCm and TPU in that order. `cx.initialize` chooses a
+plugin or its options instead, and has to come before that first use.
 `cx.initialize(platform="cuda")` asks for a platform, and
 `cx.initialize(Path("libpjrt.so"), platform="cpu")` loads a library by path. `python -m
 cyxla` lists what it finds.
@@ -125,9 +134,9 @@ as `cyxla_pjrt_cpu` has.
 Some JAX functions lower to custom calls, which are native functions that the program
 runs. On the CPU, `jnp.linalg` and `jax.scipy.linalg` call the LAPACK kernels that
 jaxlib ships. A PJRT plugin is a separate build of XLA that does not know them, so
-`cx.initialize()` registers jaxlib's typed FFI handlers with the plugin by name.
-Programs with `cholesky`, `solve`, `svd`, `eigh`, `qr`, `lu`, `eigvals` and the other
-linear algebra functions then compile and run like they do in JAX.
+Loading the plugin registers jaxlib's typed FFI handlers with it by name. Programs with
+`cholesky`, `solve`, `svd`, `eigh`, `qr`, `lu`, `eigvals` and the other linear algebra
+functions then compile and run like they do in JAX.
 
 A library with its own primitives registers a typed FFI handler with
 `jax.ffi.register_ffi_target`, which only tells JAX about it. cyxla needs the handler as
@@ -168,11 +177,11 @@ distributions that the caller names.
 
 ## Limitations
 
-- Buffers hold `float64` values only. TPUs do not support `float64`, so programs for
-  them fail to compile.
+- Buffers hold the dtypes listed above and no others, such as the 8-bit floats, 4-bit
+  integers and PRNG keys. `cx.lower` refuses a function that uses them. TPUs do not
+  support `float64`, so programs for them fail to compile.
 - Custom calls need a typed FFI handler. Untyped custom calls and Python callbacks do
-  not work, and functions with complex inputs or outputs, such as the eigenvalues of
-  `jnp.linalg.eig`, must turn them into `float64` values inside the function.
+  not work.
 - The GPU and TPU paths are tested up to client creation. CI has no GPU, so execution on
   one is untested.
 - On Windows only the CPU plugin exists, since JAX publishes no native GPU plugins

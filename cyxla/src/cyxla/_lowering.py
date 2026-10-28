@@ -4,8 +4,10 @@ from collections.abc import Callable, Sequence
 from typing import Any, NamedTuple
 
 import jax
+import numpy as np
 
-from cyxla import _runtime
+from cyxla import _plugins, _runtime
+from cyxla._types import ArrayType
 
 LOWERING_PLATFORMS = frozenset({"cpu", "cuda", "rocm", "tpu"})
 """Platforms that `jax.export` lowers for, which are also the names the plugins report."""
@@ -18,18 +20,25 @@ class LoweredProgram(NamedTuple):
     """Portable StableHLO bytecode, which the PJRT plugin compiles."""
     text: str
     """The module as text, from which the executable cache key is computed."""
+    input_types: tuple[ArrayType, ...] | None = None
+    """The type of each argument, or `None` when it is not known."""
 
 
 def lowering_platform(platform: str | None) -> str:
     """Returns the platform to lower for.
 
-    Without a platform this is the platform of the loaded plugin, or `cpu` before one is
-    loaded.
+    Without a platform this is the platform of the loaded plugin. Before one is loaded it is
+    the platform that `initialize` would load, or `cpu` if no plugin is installed. Lowering
+    never loads a plugin itself.
     """
     if platform is None:
-        if not _runtime.is_initialized():
-            return "cpu"
-        platform = _runtime.runtime_info().platform
+        if _runtime.is_initialized():
+            platform = _runtime.runtime_info().platform
+        else:
+            try:
+                platform = _plugins.find_plugin().platform
+            except RuntimeError:
+                platform = "cpu"
     name = platform.lower()
     if name not in LOWERING_PLATFORMS:
         known = ", ".join(sorted(LOWERING_PLATFORMS))
@@ -67,6 +76,32 @@ def lower(
             f"{error}\nName the custom calls that the function may run in the "
             "`custom_calls` argument of `cyxla.lower`."
         ) from error
+    input_types = tuple(array_type(aval) for aval in exported.in_avals)
+    for index, aval in enumerate(exported.out_avals):
+        array_type(aval, f"The result {index}")
     return LoweredProgram(
-        code=bytes(exported.mlir_module_serialized), text=exported.mlir_module()
+        code=bytes(exported.mlir_module_serialized),
+        text=exported.mlir_module(),
+        input_types=input_types,
     )
+
+
+def array_type(aval: Any, subject: str = "An argument") -> ArrayType:
+    """Returns the `ArrayType` of an abstract value, or raises if the runtime cannot hold it.
+
+    The abstract value is typed `Any` because `jax.export` exposes it as an internal class.
+    """
+    try:
+        dtype = np.dtype(aval.dtype)
+        shape = tuple(int(dimension) for dimension in aval.shape)
+    except (TypeError, ValueError, jax.errors.InconclusiveDimensionOperation) as error:
+        raise ValueError(
+            f"{subject} has the type {aval}, which has no dtype or shape that the runtime "
+            "can hold."
+        ) from error
+    if dtype not in _runtime.CODES:
+        supported = ", ".join(sorted(str(known) for known in _runtime.CODES))
+        raise ValueError(
+            f"{subject} has the dtype {dtype}, but the runtime supports only {supported}."
+        )
+    return ArrayType(dtype, shape)

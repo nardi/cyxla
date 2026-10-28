@@ -28,17 +28,15 @@ import numpy as np
 
 import cyxla as cx
 
-cx.enable_x64()
-cx.initialize()
 key = cx.cache_key("polynomial", "degree 3", distributions=("numpy",))
 cached = cx.load_lowered(key)
 if cached is None:
-    program = cx.lower(lambda x: x**3 - x, [jax.ShapeDtypeStruct((2,), jnp.float64)])
+    program = cx.lower(lambda x: x**3 - x, [jax.ShapeDtypeStruct((2,), jnp.float32)])
     cx.store_lowered(key, [program])
     cached = (program,)
 (program,) = cached
 executable, statistics = cx.compile_program(program)
-(result,) = executable.run([np.array([1.0, 2.0])], output_sizes=[2])
+(result,) = executable.run([np.array([1.0, 2.0])])
 ```
 
 <!-- name: test_docs_caching -->

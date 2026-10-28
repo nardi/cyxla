@@ -17,6 +17,7 @@ import importlib.metadata
 import importlib.util
 import os
 import re
+import threading
 import warnings
 from collections.abc import Mapping
 from pathlib import Path
@@ -116,6 +117,9 @@ class PluginIdentity(NamedTuple):
 
 loaded_plugin: PluginIdentity | None = None
 """The plugin that `initialize` loaded, or `None` before it runs."""
+
+initialization_lock = threading.RLock()
+"""Held while a plugin loads, so threads that start at once load it only once."""
 
 
 def namespace_directories(name: str) -> tuple[Path, ...]:
@@ -257,6 +261,9 @@ def initialize(
 ) -> RuntimeInfo:
     """Loads a PJRT plugin and returns details of its runtime.
 
+    Calling it is optional, as the first function that needs a plugin loads the default one.
+    It is for choosing the plugin or its options, and has to come before that first use.
+
     Without a plugin, `find_plugin` picks one for `platform`. A path is loaded with the
     default options of `platform`, which is `cpu` if not given. `options` add to or replace
     the plugin's client options. A process loads one plugin, so later calls return the
@@ -266,9 +273,20 @@ def initialize(
     which `jnp.linalg` programs need, and so are the targets registered earlier with
     `register_ffi_target`. Pass `False` to register none.
     """
+    with initialization_lock:
+        if _runtime.is_initialized():
+            return _runtime.runtime_info()
+        return load_plugin(plugin, platform, options, jax_targets)
+
+
+def load_plugin(
+    plugin: Plugin | Path | None,
+    platform: str | None,
+    options: Mapping[str, OptionValue] | None,
+    jax_targets: bool,
+) -> RuntimeInfo:
+    """Loads a plugin with the arguments of `initialize`, which holds the lock."""
     global loaded_plugin
-    if _runtime.is_initialized():
-        return _runtime.runtime_info()
     match plugin:
         case None:
             chosen = find_plugin(platform)

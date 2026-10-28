@@ -10,6 +10,7 @@ the loaded plugin.
 import functools
 import hashlib
 import importlib.metadata
+import json
 import os
 import re
 import struct
@@ -19,10 +20,12 @@ from pathlib import Path
 from typing import NamedTuple
 
 import jax
+import numpy as np
 
-from cyxla import _plugins
+from cyxla import _plugins, _runtime
 from cyxla._lowering import LoweredProgram
 from cyxla._runtime import Executable
+from cyxla._types import ArrayType
 
 CACHE_ENVIRONMENT_VARIABLE = "CYXLA_CACHE_DIR"
 """Environment variable with the directory of the disk cache."""
@@ -30,7 +33,7 @@ CACHE_ENVIRONMENT_VARIABLE = "CYXLA_CACHE_DIR"
 LOCATION_PATTERN = re.compile(r"^#loc.*$|\s*loc\((?:[^()]|\([^()]*\))*\)", re.MULTILINE)
 """Source locations in StableHLO text, which differ between traces of the same function."""
 
-LOWERED_MAGIC = b"CYXLA-LOWERED-1\n"
+LOWERED_MAGIC = b"CYXLA-LOWERED-2\n"
 """First bytes of a file of lowered programs."""
 
 
@@ -128,9 +131,28 @@ def encode_lowered(programs: Sequence[LoweredProgram | None]) -> bytes:
             parts.append(struct.pack("<B", 0))
             continue
         text = program.text.encode()
-        parts.append(struct.pack("<BQQ", 1, len(program.code), len(text)))
-        parts += [program.code, text]
+        types = encode_types(program.input_types)
+        parts.append(struct.pack("<BQQQ", 1, len(program.code), len(text), len(types)))
+        parts += [program.code, text, types]
     return b"".join(parts)
+
+
+def encode_types(types: tuple[ArrayType, ...] | None) -> bytes:
+    """Returns argument types as JSON, with `null` for types that are not known."""
+    if types is None:
+        return b"null"
+    return json.dumps([[dtype.name, list(shape)] for dtype, shape in types]).encode()
+
+
+def decode_types(data: bytes) -> tuple[ArrayType, ...] | None:
+    """Returns the argument types that `encode_types` wrote.
+
+    Raises a `ValueError` if the JSON is malformed, and a `TypeError` for an unknown dtype.
+    """
+    entries = json.loads(data)
+    if entries is None:
+        return None
+    return tuple(ArrayType(np.dtype(name), tuple(shape)) for name, shape in entries)
 
 
 def decode_lowered(data: bytes) -> tuple[LoweredProgram | None, ...]:
@@ -148,15 +170,18 @@ def decode_lowered(data: bytes) -> tuple[LoweredProgram | None, ...]:
             if not is_present:
                 programs.append(None)
                 continue
-            code_size, text_size = struct.unpack_from("<QQ", data, offset)
-            offset += 16
-            if offset + code_size + text_size > len(data):
+            code_size, text_size, types_size = struct.unpack_from("<QQQ", data, offset)
+            offset += 24
+            end = offset + code_size + text_size + types_size
+            if end > len(data):
                 raise struct.error("the programs run past the end of the file")
             code = data[offset : offset + code_size]
-            text = data[offset + code_size : offset + code_size + text_size].decode()
-            offset += code_size + text_size
-            programs.append(LoweredProgram(code, text))
-    except (struct.error, UnicodeDecodeError) as error:
+            text_end = offset + code_size + text_size
+            text = data[offset + code_size : text_end].decode()
+            types = decode_types(data[text_end:end])
+            offset = end
+            programs.append(LoweredProgram(code, text, types))
+    except (struct.error, UnicodeDecodeError, TypeError, ValueError) as error:
         raise ValueError(f"Malformed file of lowered programs: {error}.") from error
     if offset != len(data):
         raise ValueError("Malformed file of lowered programs: trailing bytes.")
@@ -185,9 +210,10 @@ def store_lowered(key: str, programs: Sequence[LoweredProgram | None]) -> None:
 
 def executable_key(program: LoweredProgram) -> str:
     """Returns the cache key of a program's executable for the loaded plugin."""
+    _runtime.ensure_initialized()
     plugin = _plugins.loaded_plugin
     if plugin is None:
-        raise RuntimeError("No PJRT plugin is loaded.")
+        raise RuntimeError("The loaded PJRT plugin is not recorded.")
     digest = hashlib.sha256(LOCATION_PATTERN.sub("", program.text).encode())
     digest.update(b"\0" + compile_options() + b"\0" + repr(plugin).encode())
     return digest.hexdigest()
@@ -198,7 +224,9 @@ def compile_program(
 ) -> tuple[Executable, CompileStatistics]:
     """Compiles a program, or loads its executable from the disk cache.
 
-    A cached executable that the plugin rejects is removed and compiled again.
+    A cached executable that the plugin rejects is removed and compiled again. The
+    executable takes the argument types of the program, so `Executable.run` converts its
+    arguments to them.
     """
     path = cache_directory() / f"{executable_key(program)}.pjrt" if disk_cache else None
     if path is not None and path.exists():
@@ -208,6 +236,7 @@ def compile_program(
         except RuntimeError:
             path.unlink(missing_ok=True)
         else:
+            executable.input_types = program.input_types
             return executable, CompileStatistics(
                 load_seconds=time.perf_counter() - start, loaded=1
             )
@@ -221,6 +250,7 @@ def compile_program(
             f"{error}\nRegister the target with `cyxla.register_ffi_target`, or call "
             "`cyxla.mirror_jax_registrations` before the library that provides it is imported."
         ) from error
+    executable.input_types = program.input_types
     statistics = CompileStatistics(
         compile_seconds=time.perf_counter() - start, compiled=1
     )
@@ -230,5 +260,8 @@ def compile_program(
 
 
 def enable_x64() -> None:
-    """Switches JAX to 64-bit floats, which the runtime's buffers hold."""
+    """Switches JAX to 64-bit mode, which `float64`, `int64` and `complex128` programs need.
+
+    Without it JAX lowers every function to 32-bit types.
+    """
     jax.config.update("jax_enable_x64", True)

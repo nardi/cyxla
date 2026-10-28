@@ -24,8 +24,8 @@ The [installation page](installation.md) lists the plugins for GPUs and TPUs.
 
 ## A first program
 
-This example lowers a function, compiles it and runs it. The plugin loads on the first
-call to `initialize`.
+This example lowers a function, compiles it and runs it. The plugin loads when the
+compilation first needs it.
 
 <!-- name: test_docs_index -->
 ```python
@@ -35,11 +35,9 @@ import numpy as np
 
 import cyxla as cx
 
-cx.enable_x64()
-cx.initialize()
-program = cx.lower(lambda x: jnp.sin(x) * 2, [jax.ShapeDtypeStruct((3,), jnp.float64)])
+program = cx.lower(lambda x: jnp.sin(x) * 2, [jax.ShapeDtypeStruct((3,), jnp.float32)])
 executable, statistics = cx.compile_program(program)
-(result,) = executable.run([np.array([0.0, 1.0, 2.0])], output_sizes=[3])
+(result,) = executable.run([np.array([0.0, 1.0, 2.0])])
 ```
 
 <!-- name: test_docs_index -->
@@ -65,9 +63,9 @@ describes.
 
 ## Limits
 
-Buffers hold `float64` values only, which TPUs do not support. Python callbacks and the
-untyped custom calls of older libraries do not run on the plugins. The GPU and TPU paths
-are tested only up to creating the client, because CI has no such hardware. The [custom
+TPUs do not support `float64`. Python callbacks and the untyped custom calls of older
+libraries do not run on the plugins. The GPU and TPU paths are tested only up to
+creating the client, because CI has no such hardware. The [custom
 calls](guide/custom-calls.md) page covers what works there.
 
 ## License

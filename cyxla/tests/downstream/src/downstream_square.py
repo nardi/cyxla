@@ -1,6 +1,7 @@
-"""Runs a cyxla program of one input and one output without the GIL."""
+"""Runs a cyxla program of one `float32` input and one output without the GIL."""
 
 import cython
+from cython.cimports.cyxla._pjrt import PJRT_Buffer_Type_F32
 from cython.cimports.cyxla._runtime import (
     ABI_VERSION,
     MAX_OUTPUTS,
@@ -8,10 +9,10 @@ from cython.cimports.cyxla._runtime import (
     Input,
     ProgramSpec,
     alias_buffer,
-    aligned_doubles,
+    aligned_memory,
     destroy_buffer,
     execute,
-    free_doubles,
+    free_aligned,
 )
 
 import cyxla
@@ -29,24 +30,32 @@ def run(executable: Executable, values: list[float], zero_copy: bool) -> list[fl
     spec.handle = executable.handle
     spec.num_inputs = 1
     spec.num_outputs = 1
-    spec.output_sizes[0] = size
+    spec.output_bytes[0] = size * cython.sizeof(cython.float)
     inputs: Input[1]
+    inputs[0].type = PJRT_Buffer_Type_F32
     inputs[0].size = size
-    inputs[0].host = aligned_doubles(size)
-    inputs[0].buffer = alias_buffer(inputs[0].host, size) if zero_copy else cython.NULL
+    inputs[0].host = aligned_memory(spec.output_bytes[0])
+    inputs[0].buffer = (
+        alias_buffer(inputs[0].host, PJRT_Buffer_Type_F32, size)
+        if zero_copy
+        else cython.NULL
+    )
+    host: cython.p_float = cython.cast(cython.p_float, inputs[0].host)
     index: cython.int
     for index in range(size):
-        inputs[0].host[index] = values[index]
-    result: cython.p_double = aligned_doubles(size)
-    outputs: cython.p_double[MAX_OUTPUTS]
+        host[index] = values[index]
+    result: cython.p_float = cython.cast(
+        cython.p_float, aligned_memory(spec.output_bytes[0])
+    )
+    outputs: cython.p_void[MAX_OUTPUTS]
     outputs[0] = result
     status: cython.int
     with cython.nogil:
         status = execute(cython.address(spec), inputs, outputs, zero_copy)
     answer = [result[index] for index in range(size)]
     destroy_buffer(inputs[0].buffer)
-    free_doubles(inputs[0].host)
-    free_doubles(result)
+    free_aligned(inputs[0].host)
+    free_aligned(result)
     if status != 0:
         raise RuntimeError("The program failed.")
     return answer

@@ -1,13 +1,14 @@
 # Plugins
 
-A plugin is a shared library that implements the PJRT C API for one kind of hardware.
-`initialize` loads one plugin per process and creates its client on the first device.
+A plugin is a shared library that implements the PJRT C API for one kind of hardware. A
+process loads one plugin and creates its client on the first device. The first function
+that needs the runtime loads the default plugin, so `initialize` is only for choosing a
+plugin or its options, and it has to come before that first use.
 
 ## Plugin selection
 
-Without arguments, `cx.initialize()` takes the CPU plugin if one is installed, then
-CUDA, ROCm and TPU in that order. A platform name asks for one, and a path loads a
-library directly.
+Without a choice, the default is the CPU plugin if one is installed, then CUDA, ROCm and
+TPU in that order. A platform name asks for one, and a path loads a library directly.
 
 ```python
 from pathlib import Path

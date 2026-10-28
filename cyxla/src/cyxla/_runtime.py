@@ -4,12 +4,13 @@ The functions declared in `_runtime.pxd` run without the GIL, so extension modul
 packages can call them from callbacks of native code. On a CPU plugin, input buffers alias
 host arrays that the caller fills in place, and outputs are read from the buffers' memory, so
 an execution needs no copies. On other platforms, every execution copies its inputs to the
-device and its outputs back.
+device and its outputs back. Buffers hold elements of the types in `DTYPES`.
 """
 
 from collections.abc import Sequence
 
 import cython
+import ml_dtypes
 import numpy as np
 from cython.cimports.cpython.bytes import (
     PyBytes_AsStringAndSize,
@@ -22,7 +23,22 @@ from cython.cimports.cyxla._pjrt import (
     PJRT_Buffer_Destroy_Args_STRUCT_SIZE,
     PJRT_Buffer_ToHostBuffer_Args,
     PJRT_Buffer_ToHostBuffer_Args_STRUCT_SIZE,
+    PJRT_Buffer_Type,
+    PJRT_Buffer_Type_BF16,
+    PJRT_Buffer_Type_C64,
+    PJRT_Buffer_Type_C128,
+    PJRT_Buffer_Type_F16,
+    PJRT_Buffer_Type_F32,
     PJRT_Buffer_Type_F64,
+    PJRT_Buffer_Type_PRED,
+    PJRT_Buffer_Type_S8,
+    PJRT_Buffer_Type_S16,
+    PJRT_Buffer_Type_S32,
+    PJRT_Buffer_Type_S64,
+    PJRT_Buffer_Type_U8,
+    PJRT_Buffer_Type_U16,
+    PJRT_Buffer_Type_U32,
+    PJRT_Buffer_Type_U64,
     PJRT_Buffer_UnsafePointer_Args,
     PJRT_Buffer_UnsafePointer_Args_STRUCT_SIZE,
     PJRT_Client_AddressableDevices_Args,
@@ -52,6 +68,10 @@ from cython.cimports.cyxla._pjrt import (
     PJRT_Executable_Destroy_Args_STRUCT_SIZE,
     PJRT_Executable_NumOutputs_Args,
     PJRT_Executable_NumOutputs_Args_STRUCT_SIZE,
+    PJRT_Executable_OutputDimensions_Args,
+    PJRT_Executable_OutputDimensions_Args_STRUCT_SIZE,
+    PJRT_Executable_OutputElementTypes_Args,
+    PJRT_Executable_OutputElementTypes_Args_STRUCT_SIZE,
     PJRT_Executable_Serialize_Args,
     PJRT_Executable_Serialize_Args_STRUCT_SIZE,
     PJRT_ExecuteOptions,
@@ -93,11 +113,40 @@ from cython.cimports.cyxla._platform import (
 from cython.cimports.libc.stdint import int64_t, uintptr_t
 from cython.cimports.libc.stdlib import calloc, free
 from cython.cimports.libc.string import memcpy, memset
+from numpy.typing import ArrayLike
 
-from cyxla._types import ErrorInfo, OptionValue, RuntimeInfo
+from cyxla._types import ArrayType, ErrorInfo, OptionValue, RuntimeInfo
 
 MINIMUM_API_MINOR_VERSION = 111
 """Oldest minor version of the PJRT C API that the runtime supports."""
+
+DTYPES: dict[int, np.dtype] = {
+    PJRT_Buffer_Type_PRED: np.dtype(np.bool_),
+    PJRT_Buffer_Type_S8: np.dtype(np.int8),
+    PJRT_Buffer_Type_S16: np.dtype(np.int16),
+    PJRT_Buffer_Type_S32: np.dtype(np.int32),
+    PJRT_Buffer_Type_S64: np.dtype(np.int64),
+    PJRT_Buffer_Type_U8: np.dtype(np.uint8),
+    PJRT_Buffer_Type_U16: np.dtype(np.uint16),
+    PJRT_Buffer_Type_U32: np.dtype(np.uint32),
+    PJRT_Buffer_Type_U64: np.dtype(np.uint64),
+    PJRT_Buffer_Type_F16: np.dtype(np.float16),
+    PJRT_Buffer_Type_F32: np.dtype(np.float32),
+    PJRT_Buffer_Type_F64: np.dtype(np.float64),
+    PJRT_Buffer_Type_BF16: np.dtype(ml_dtypes.bfloat16),
+    PJRT_Buffer_Type_C64: np.dtype(np.complex64),
+    PJRT_Buffer_Type_C128: np.dtype(np.complex128),
+}
+"""The dtype of each PJRT buffer type that the runtime supports, by the type's code."""
+
+CODES: dict[np.dtype, int] = {dtype: code for code, dtype in DTYPES.items()}
+"""The PJRT buffer type of each supported dtype, which is the inverse of `DTYPES`."""
+
+# The size in bytes of an element for each type code up to `PJRT_Buffer_Type_C128`, with 0 for
+# the codes that the runtime does not support.
+ITEM_SIZES = cython.declare(
+    cython.int[16], [0, 1, 1, 2, 4, 8, 1, 2, 4, 8, 2, 4, 8, 2, 8, 16]
+)
 
 api = cython.declare(cython.pointer[cython.const[PJRT_Api]], cython.NULL)
 client = cython.declare(cython.pointer[PJRT_Client], cython.NULL)
@@ -183,13 +232,24 @@ def destroy_buffer(buffer: cython.pointer[PJRT_Buffer]) -> cython.void:
     check(api.PJRT_Buffer_Destroy(cython.address(arguments)))
 
 
+@cython.ccall
+@cython.nogil
+@cython.exceptval(check=False)
+def itemsize(type: PJRT_Buffer_Type) -> cython.int:
+    """Returns the size of an element of a type in bytes, or 0 if the type is unsupported."""
+    code: cython.int = type
+    if code < 0 or code > PJRT_Buffer_Type_C128:
+        return 0
+    return ITEM_SIZES[code]
+
+
 @cython.cfunc
 @cython.nogil
 @cython.exceptval(check=False)
 def buffer_from_host(
-    data: cython.p_double, size: int64_t, alias: cython.bint
+    data: cython.p_void, type: PJRT_Buffer_Type, size: int64_t, alias: cython.bint
 ) -> cython.pointer[PJRT_Buffer]:
-    """Returns a PJRT buffer of `size` doubles from host memory, or NULL on error.
+    """Returns a PJRT buffer of `size` elements of a type from host memory, or NULL on error.
 
     With `alias`, the buffer may share the host memory, which the caller then keeps alive and
     fills before each execution. Without it, the data is copied during the call.
@@ -199,7 +259,7 @@ def buffer_from_host(
     arguments.struct_size = PJRT_Client_BufferFromHostBuffer_Args_STRUCT_SIZE
     arguments.client = client
     arguments.data = data
-    arguments.type = PJRT_Buffer_Type_F64
+    arguments.type = type
     arguments.dims = cython.address(size)
     arguments.num_dims = 1
     arguments.device = device
@@ -225,35 +285,37 @@ def buffer_from_host(
 @cython.cfunc
 @cython.nogil
 @cython.exceptval(check=False)
-def alias_buffer(data: cython.p_double, size: int64_t) -> cython.pointer[PJRT_Buffer]:
-    """Returns a buffer that shares `size` doubles of host memory, or NULL without aliasing."""
+def alias_buffer(
+    data: cython.p_void, type: PJRT_Buffer_Type, size: int64_t
+) -> cython.pointer[PJRT_Buffer]:
+    """Returns a buffer that shares `size` elements of host memory, or NULL without aliasing."""
     if not can_alias:
         return cython.NULL  # pragma: no cover
-    return buffer_from_host(data, size, True)
+    return buffer_from_host(data, type, size, True)
 
 
 @cython.cfunc
 @cython.nogil
 @cython.exceptval(check=False)
-def aligned_doubles(count: cython.int) -> cython.p_double:
-    """Returns zeroed memory for `count` doubles at a 64-byte boundary, which XLA needs to alias it.
+def aligned_memory(size: cython.size_t) -> cython.p_void:
+    """Returns zeroed memory of `size` bytes at a 64-byte boundary, which XLA needs to alias it.
 
-    The memory is freed with `free_doubles`, because Windows frees aligned memory with another
+    The memory is freed with `free_aligned`, because Windows frees aligned memory with another
     function than `free`.
     """
-    size: cython.size_t = max(count, 1) * cython.sizeof(cython.double)
+    size = max(size, 1)
     memory: cython.p_void = cyxla_aligned_alloc(ALIGNMENT, size)
     if memory == cython.NULL:
         return cython.NULL  # pragma: no cover
     memset(memory, 0, size)
-    return cython.cast(cython.p_double, memory)
+    return memory
 
 
 @cython.cfunc
 @cython.nogil
 @cython.exceptval(check=False)
-def free_doubles(memory: cython.p_double) -> cython.void:
-    """Frees memory from `aligned_doubles`, ignoring NULL."""
+def free_aligned(memory: cython.p_void) -> cython.void:
+    """Frees memory from `aligned_memory`, ignoring NULL."""
     cyxla_aligned_free(memory)
 
 
@@ -263,7 +325,7 @@ def free_doubles(memory: cython.p_double) -> cython.void:
 def execute(
     program: cython.pointer[ProgramSpec],
     inputs: cython.pointer[Input],
-    outputs: cython.pp_double,
+    outputs: cython.pointer[cython.p_void],
     zero_copy: cython.bint,
 ) -> cython.int:
     """Executes a program and writes its outputs, returning -1 on error.
@@ -271,7 +333,8 @@ def execute(
     `inputs` holds one host array per program input, which the caller fills before the call.
     With `zero_copy` and a plugin that aliases host memory, the inputs' aliased buffers are
     passed and outputs are read in place. Otherwise each input is copied into a new buffer and
-    each output is copied back. Outputs with a NULL destination are dropped.
+    each output is copied back. Each destination holds the bytes in `output_bytes` of its
+    output, and outputs with a NULL destination are dropped.
     """
     if program.handle == cython.NULL:
         return -1  # pragma: no cover
@@ -285,7 +348,7 @@ def execute(
             arguments[index] = inputs[index].buffer
         else:
             created[index] = buffer_from_host(
-                inputs[index].host, inputs[index].size, False
+                inputs[index].host, inputs[index].type, inputs[index].size, False
             )
             arguments[index] = created[index]
             if created[index] == cython.NULL:
@@ -319,7 +382,7 @@ def execute(
     transfer: PJRT_Buffer_ToHostBuffer_Args
     size: cython.size_t
     for index in range(program.num_outputs):
-        size = program.output_sizes[index] * cython.sizeof(cython.double)
+        size = program.output_bytes[index]
         if status == 0 and outputs[index] != cython.NULL:
             if use_aliases and can_read_inplace:
                 # On the CPU device, buffer memory is host memory, so the result is read in place.
@@ -371,10 +434,17 @@ def destroy_executable(executable: cython.pointer[PJRT_Executable]) -> cython.vo
     check(api.PJRT_Executable_Destroy(cython.address(arguments)))
 
 
-def require_runtime() -> None:
-    """Raises an error unless `initialize` has run."""
+def ensure_initialized() -> None:
+    """Loads the default plugin unless a plugin is loaded already.
+
+    Every function of the Python interface that needs the runtime calls it, so `initialize`
+    only has to run first to choose a plugin or its options. It imports `cyxla._plugins` here,
+    because that module imports this one.
+    """
     if api == cython.NULL:
-        raise RuntimeError("The PJRT runtime is not initialized")
+        from cyxla import _plugins
+
+        _plugins.initialize()
 
 
 def raise_last_error(operation: str) -> None:
@@ -539,8 +609,10 @@ def initialize(
     # memory of a zero-copy buffer.
     can_read_inplace = platform_name() == "cpu"
     if can_read_inplace:
-        probe: cython.p_double = aligned_doubles(4)
-        buffer: cython.pointer[PJRT_Buffer] = buffer_from_host(probe, 4, True)
+        probe: cython.p_void = aligned_memory(32)
+        buffer: cython.pointer[PJRT_Buffer] = buffer_from_host(
+            probe, PJRT_Buffer_Type_F64, 4, True
+        )
         pointer: PJRT_Buffer_UnsafePointer_Args
         memset(cython.address(pointer), 0, cython.sizeof(pointer))
         pointer.struct_size = PJRT_Buffer_UnsafePointer_Args_STRUCT_SIZE
@@ -548,7 +620,7 @@ def initialize(
         check(api.PJRT_Buffer_UnsafePointer(cython.address(pointer)))
         can_alias = pointer.buffer_pointer == cython.cast(uintptr_t, probe)
         destroy_buffer(buffer)
-        free_doubles(probe)
+        free_aligned(probe)
     return runtime_info()
 
 
@@ -565,7 +637,7 @@ def platform_name() -> str:
 
 def runtime_info() -> RuntimeInfo:
     """Returns the PJRT API version, the platform and whether executions avoid copies."""
-    require_runtime()
+    ensure_initialized()
     return RuntimeInfo(
         api_major_version=api.pjrt_api_version.major_version,
         api_minor_version=api.pjrt_api_version.minor_version,
@@ -591,7 +663,7 @@ def ffi_extension() -> cython.pointer[PJRT_FFI_Extension]:
 
 def supports_ffi() -> bool:
     """Returns whether the loaded plugin can register FFI handlers."""
-    require_runtime()
+    ensure_initialized()
     return ffi_extension() != cython.NULL
 
 
@@ -606,7 +678,7 @@ def register_ffi_handler(
     process. It calls the handler once to read its metadata, so the address has to be a
     real handler.
     """
-    require_runtime()
+    ensure_initialized()
     ffi: cython.pointer[PJRT_FFI_Extension] = ffi_extension()
     if ffi == cython.NULL:
         raise RuntimeError(  # pragma: no cover
@@ -635,7 +707,15 @@ def error_info() -> ErrorInfo:
 
 @cython.cclass
 class Executable:
-    """A program loaded into the PJRT client."""
+    """A program loaded into the PJRT client.
+
+    Attributes:
+        num_outputs: The number of outputs of the program.
+        output_types: The `ArrayType` of each output, as the plugin reports it.
+        input_types: The `ArrayType` of each argument, or `None` when it is not known.
+            `compile_program` sets it from the lowered program, and `run` then converts
+            its arguments to these types.
+    """
 
     def __dealloc__(self) -> None:
         arguments: PJRT_LoadedExecutable_Destroy_Args
@@ -648,7 +728,7 @@ class Executable:
     @staticmethod
     def compile(code: bytes, compile_options: bytes) -> Executable:
         """Compiles StableHLO bytecode with a serialized `CompileOptionsProto`."""
-        require_runtime()
+        ensure_initialized()
         code_data: cython.p_char
         options_data: cython.p_char
         code_size: cython.Py_ssize_t
@@ -683,7 +763,7 @@ class Executable:
     @staticmethod
     def deserialize(serialized: bytes) -> Executable:
         """Loads an executable that `serialize` wrote with the same plugin."""
-        require_runtime()
+        ensure_initialized()
         data: cython.p_char
         size: cython.Py_ssize_t
         PyBytes_AsStringAndSize(serialized, cython.address(data), cython.address(size))
@@ -713,64 +793,87 @@ class Executable:
         outputs.executable = unloaded
         check(api.PJRT_Executable_NumOutputs(cython.address(outputs)))
         executable.num_outputs = outputs.num_outputs
-        destroy_executable(unloaded)
+        executable.input_types = None
+        try:
+            executable.output_types = output_types(unloaded, outputs.num_outputs)
+        finally:
+            destroy_executable(unloaded)
         return executable
 
+    @property
+    def output_bytes(self) -> tuple[int, ...]:
+        """The size in bytes of each output, which fills `ProgramSpec.output_bytes`."""
+        return tuple(output.nbytes for output in self.output_types)
+
     def run(
-        self,
-        arguments: Sequence[np.ndarray],
-        output_sizes: Sequence[int],
-        zero_copy: bool = True,
+        self, arguments: Sequence[ArrayLike], zero_copy: bool = True
     ) -> list[np.ndarray]:
-        """Executes the program on float64 arguments and returns its flat outputs.
+        """Executes the program and returns its outputs with their shapes and dtypes.
 
         It goes through `execute`, as extension modules do, which makes it useful for tests
-        and interactive checks. Each output has the number of doubles in `output_sizes`.
+        and interactive checks. When the types of the arguments are known, as for an
+        executable from `compile_program`, each argument converts to the type that the
+        program takes, and otherwise it keeps its own dtype.
         """
-        require_runtime()
+        ensure_initialized()
         num_inputs: cython.int = len(arguments)
-        num_outputs: cython.int = len(output_sizes)
-        if num_inputs > MAX_INPUTS or num_outputs != self.num_outputs:
+        num_outputs: cython.int = self.num_outputs
+        expected = self.input_types
+        if num_inputs > MAX_INPUTS or num_outputs > MAX_OUTPUTS:
             raise ValueError(
-                f"The program takes at most {MAX_INPUTS} arguments and has "
-                f"{self.num_outputs} outputs, not {num_inputs} and {num_outputs}"
+                f"The runtime takes at most {MAX_INPUTS} arguments and returns at most "
+                f"{MAX_OUTPUTS} outputs, not {num_inputs} and {num_outputs}."
             )
+        if expected is not None and len(expected) != num_inputs:
+            raise ValueError(
+                f"The program takes {len(expected)} arguments, not {num_inputs}."
+            )
+        values = [
+            as_input(argument, None if expected is None else expected[index], index)
+            for index, argument in enumerate(arguments)
+        ]
+        results = [np.empty(output.shape, output.dtype) for output in self.output_types]
         spec: ProgramSpec
         spec.handle = self.handle
         spec.num_inputs = num_inputs
         spec.num_outputs = num_outputs
         inputs: Input[MAX_INPUTS]
-        outputs: cython.p_double[MAX_OUTPUTS]
-        results = [np.zeros(max(size, 1)) for size in output_sizes]
+        outputs: cython.p_void[MAX_OUTPUTS]
         index: cython.int
         for index in range(num_outputs):
-            spec.output_sizes[index] = output_sizes[index]
-            outputs[index] = cython.cast(
-                cython.p_double, cython.cast(uintptr_t, results[index].ctypes.data)
-            )
+            spec.output_bytes[index] = results[index].nbytes
+            outputs[index] = cython.NULL
+            if results[index].nbytes > 0:
+                outputs[index] = cython.cast(
+                    cython.p_void, cython.cast(uintptr_t, results[index].ctypes.data)
+                )
+        size: int64_t
         for index in range(num_inputs):
-            values = np.ascontiguousarray(arguments[index], dtype=np.float64).ravel()
-            inputs[index].size = values.shape[0]
-            inputs[index].host = aligned_doubles(values.shape[0])
+            inputs[index].type = CODES[values[index].dtype]
+            inputs[index].size = values[index].size
+            size = inputs[index].size * itemsize(inputs[index].type)
+            inputs[index].host = aligned_memory(size)
             memcpy(
                 inputs[index].host,
-                cython.cast(cython.p_void, cython.cast(uintptr_t, values.ctypes.data)),
-                values.shape[0] * cython.sizeof(cython.double),
+                cython.cast(
+                    cython.p_void, cython.cast(uintptr_t, values[index].ctypes.data)
+                ),
+                size,
             )
             inputs[index].buffer = cython.NULL
             if zero_copy:
-                inputs[index].buffer = alias_buffer(inputs[index].host, values.shape[0])
+                inputs[index].buffer = alias_buffer(
+                    inputs[index].host, inputs[index].type, inputs[index].size
+                )
         status: cython.int
         with cython.nogil:
             status = execute(cython.address(spec), inputs, outputs, zero_copy)
         for index in range(num_inputs):
             destroy_buffer(inputs[index].buffer)
-            free_doubles(inputs[index].host)
+            free_aligned(inputs[index].host)
         if status != 0:
             raise_last_error("PJRT_LoadedExecutable_Execute")
-        return [
-            result[:size] for result, size in zip(results, output_sizes, strict=True)
-        ]
+        return results
 
     def serialize(self) -> bytes:
         """Returns the executable in the plugin's serialized form."""
@@ -803,3 +906,74 @@ def get_executable(
     arguments.loaded_executable = handle
     check(api.PJRT_LoadedExecutable_GetExecutable(cython.address(arguments)))
     return arguments.executable
+
+
+def as_input(
+    argument: np.ndarray, expected: ArrayType | None, index: int
+) -> np.ndarray:
+    """Returns an argument as a flat, contiguous array of the type that the program takes.
+
+    Without a known type the argument keeps its dtype, which has to be supported. Otherwise
+    it converts to the type of the program when no information is lost beyond rounding, so
+    `float64` values pass for a `float32` argument, but `float64` values do not pass for an
+    `int32` one.
+    """
+    array = np.ascontiguousarray(argument)
+    if expected is None:
+        if array.dtype not in CODES:
+            raise TypeError(
+                f"Argument {index} has the dtype {array.dtype}, which cyxla does not support."
+            )
+        return array.ravel()
+    if array.dtype != expected.dtype:
+        lossless = array.dtype.kind in "biu" and expected.dtype.kind in "fc"
+        if not (lossless or np.can_cast(array.dtype, expected.dtype, "same_kind")):
+            raise TypeError(
+                f"Argument {index} has the dtype {array.dtype}, which cannot convert to "
+                f"the {expected.dtype} that the program takes."
+            )
+        array = array.astype(expected.dtype)
+    if array.size != expected.size:
+        raise ValueError(
+            f"Argument {index} has {array.size} elements, but the program takes "
+            f"{expected.size}."
+        )
+    return array.ravel()
+
+
+@cython.cfunc
+def output_types(
+    executable: cython.pointer[PJRT_Executable], count: cython.size_t
+) -> tuple:
+    """Returns the `ArrayType` of each output of an unloaded executable."""
+    types: PJRT_Executable_OutputElementTypes_Args
+    memset(cython.address(types), 0, cython.sizeof(types))
+    types.struct_size = PJRT_Executable_OutputElementTypes_Args_STRUCT_SIZE
+    types.executable = executable
+    dimensions: PJRT_Executable_OutputDimensions_Args
+    memset(cython.address(dimensions), 0, cython.sizeof(dimensions))
+    dimensions.struct_size = PJRT_Executable_OutputDimensions_Args_STRUCT_SIZE
+    dimensions.executable = executable
+    dimensions.num_outputs = count
+    if (
+        check(api.PJRT_Executable_OutputElementTypes(cython.address(types))) != 0
+        or check(api.PJRT_Executable_OutputDimensions(cython.address(dimensions))) != 0
+    ):
+        raise_last_error("PJRT_Executable_OutputDimensions")  # pragma: no cover
+    result = []
+    offset: cython.size_t = 0
+    index: cython.size_t
+    axis: cython.size_t
+    for index in range(count):
+        shape = []
+        for axis in range(dimensions.dim_sizes[index]):
+            shape.append(dimensions.dims[offset + axis])
+        offset += dimensions.dim_sizes[index]
+        dtype = DTYPES.get(types.output_types[index])
+        if dtype is None:
+            raise ValueError(
+                f"Output {index} has the PJRT element type {types.output_types[index]}, "
+                "which cyxla does not support."
+            )
+        result.append(ArrayType(dtype, tuple(shape)))
+    return tuple(result)

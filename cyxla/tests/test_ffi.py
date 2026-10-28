@@ -54,8 +54,17 @@ def run_program(function: Callable[..., Any], argument: np.ndarray) -> np.ndarra
     program = cx.lower(function, (jax.ShapeDtypeStruct(argument.shape, jnp.float64),))
     executable, _ = cx.compile_program(program, disk_cache=False)
     expected = np.asarray(function(argument))
-    (result,) = executable.run([np.ascontiguousarray(argument)], [expected.size])
-    return result.reshape(expected.shape)
+    (result,) = executable.run([np.ascontiguousarray(argument)])
+    assert result.shape == expected.shape
+    return result
+
+
+def test_complex_results_match_jax() -> None:
+    """Checks that the eigenvalues of a general matrix come back as complex numbers."""
+    function = jnp.linalg.eigvals
+    result = run_program(function, MATRIX)
+    assert result.dtype == np.complex128
+    np.testing.assert_allclose(result, jax.jit(function)(MATRIX), atol=1e-10)
 
 
 @pytest.mark.parametrize("name", LINEAR_ALGEBRA)
@@ -93,8 +102,8 @@ def test_cached_executables_run_in_a_fresh_process() -> None:
         (program,) = cx.load_lowered({key!r})
         executable, statistics = cx.compile_program(program)
         matrix = np.array({SYMMETRIC.tolist()!r})
-        (result,) = executable.run([matrix], [16])
-        assert np.allclose(result.reshape(4, 4), np.linalg.cholesky(matrix))
+        (result,) = executable.run([matrix])
+        assert np.allclose(result, np.linalg.cholesky(matrix))
         print(statistics.loaded, statistics.compiled)
         """
     cx.compile_program(program)
@@ -140,7 +149,7 @@ def scale_program(target: str) -> cx.LoweredProgram:
 def run_scale(program: cx.LoweredProgram) -> np.ndarray:
     """Compiles and runs a program of `scale_program` on 0, 1, 2 and 3."""
     executable, _ = cx.compile_program(program, disk_cache=False)
-    (result,) = executable.run([np.arange(4.0)], [4])
+    (result,) = executable.run([np.arange(4.0)])
     return result
 
 

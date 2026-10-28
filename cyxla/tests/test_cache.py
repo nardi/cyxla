@@ -6,6 +6,8 @@ from pathlib import Path, PurePosixPath
 
 import jax
 import jax.numpy as jnp
+import ml_dtypes
+import numpy as np
 import pytest
 
 import cyxla as cx
@@ -20,7 +22,17 @@ from cyxla._cache import (
 PROGRAM = cx.LoweredProgram(code=b"\x00code\xff", text="module @x {}")
 """A stand-in for a lowered program, enough for encoding."""
 
-PROGRAMS = (PROGRAM, None, PROGRAM, None)
+TYPED_PROGRAM = cx.LoweredProgram(
+    code=b"\x01",
+    text="module @y {}",
+    input_types=(
+        cx.ArrayType(np.dtype(np.float32), (2, 3)),
+        cx.ArrayType(np.dtype(ml_dtypes.bfloat16), ()),
+    ),
+)
+"""A stand-in for a lowered program with argument types."""
+
+PROGRAMS = (PROGRAM, None, TYPED_PROGRAM, None)
 """Lowered programs with two of them left out."""
 
 SHAPES = (jax.ShapeDtypeStruct((2,), jnp.float64),)
@@ -41,6 +53,8 @@ def test_encoding_round_trip() -> None:
         (encode_lowered(PROGRAMS)[:30], "Malformed"),
         (encode_lowered(PROGRAMS) + b"x", "trailing bytes"),
         (encode_lowered(PROGRAMS).replace(b"module", b"\xffodule", 1), "Malformed"),
+        (encode_lowered(PROGRAMS).replace(b"null", b"nul!", 1), "Malformed"),
+        (encode_lowered(PROGRAMS).replace(b"float32", b"floatxx", 1), "Malformed"),
     ],
 )
 def test_malformed_files(data: bytes, message: str) -> None:
@@ -128,7 +142,7 @@ def test_executable_key_needs_a_plugin(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(_plugins, "loaded_plugin", identity._replace(size=0))
     assert executable_key(PROGRAM) != key
     monkeypatch.setattr(_plugins, "loaded_plugin", None)
-    with pytest.raises(RuntimeError, match="No PJRT plugin"):
+    with pytest.raises(RuntimeError, match="not recorded"):
         executable_key(PROGRAM)
 
 
@@ -146,10 +160,12 @@ def test_compile_program_uses_the_disk_cache(cache_directory: Path) -> None:
     program = cx.lower(jnp.cos, SHAPES)
     path = cache_directory / f"{executable_key(program)}.pjrt"
     path.unlink(missing_ok=True)
-    _, statistics = cx.compile_program(program)
+    executable, statistics = cx.compile_program(program)
     assert statistics.compiled == 1 and path.exists()
-    _, statistics = cx.compile_program(program)
+    assert executable.input_types == program.input_types
+    executable, statistics = cx.compile_program(program)
     assert statistics.loaded == 1 and statistics.compiled == 0
+    assert executable.input_types == program.input_types
     path.write_bytes(b"corrupted")
     _, statistics = cx.compile_program(program)
     assert statistics.compiled == 1

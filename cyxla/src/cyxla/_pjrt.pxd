@@ -26,7 +26,22 @@ cdef extern from "xla/pjrt/c/pjrt_c_api.h" nogil:
         PJRT_Extension_Base* next
 
     ctypedef enum PJRT_Buffer_Type:
+        PJRT_Buffer_Type_INVALID
+        PJRT_Buffer_Type_PRED
+        PJRT_Buffer_Type_S8
+        PJRT_Buffer_Type_S16
+        PJRT_Buffer_Type_S32
+        PJRT_Buffer_Type_S64
+        PJRT_Buffer_Type_U8
+        PJRT_Buffer_Type_U16
+        PJRT_Buffer_Type_U32
+        PJRT_Buffer_Type_U64
+        PJRT_Buffer_Type_F16
+        PJRT_Buffer_Type_F32
         PJRT_Buffer_Type_F64
+        PJRT_Buffer_Type_BF16
+        PJRT_Buffer_Type_C64
+        PJRT_Buffer_Type_C128
 
     ctypedef enum PJRT_HostBufferSemantics:
         PJRT_HostBufferSemantics_kImmutableOnlyDuringCall
@@ -62,6 +77,8 @@ cdef extern from "xla/pjrt/c/pjrt_c_api.h" nogil:
         PJRT_LoadedExecutable_GetExecutable_Args_STRUCT_SIZE
         PJRT_Executable_Destroy_Args_STRUCT_SIZE
         PJRT_Executable_NumOutputs_Args_STRUCT_SIZE
+        PJRT_Executable_OutputElementTypes_Args_STRUCT_SIZE
+        PJRT_Executable_OutputDimensions_Args_STRUCT_SIZE
         PJRT_Executable_Serialize_Args_STRUCT_SIZE
         PJRT_Executable_DeserializeAndLoad_Args_STRUCT_SIZE
 
@@ -196,6 +213,19 @@ cdef extern from "xla/pjrt/c/pjrt_c_api.h" nogil:
         PJRT_Executable* executable
         size_t num_outputs
 
+    ctypedef struct PJRT_Executable_OutputElementTypes_Args:
+        size_t struct_size
+        PJRT_Executable* executable
+        PJRT_Buffer_Type* output_types
+        size_t num_output_types
+
+    ctypedef struct PJRT_Executable_OutputDimensions_Args:
+        size_t struct_size
+        PJRT_Executable* executable
+        size_t num_outputs
+        const int64_t* dims
+        const size_t* dim_sizes
+
     ctypedef struct PJRT_Executable_Serialize_Args:
         size_t struct_size
         const PJRT_Executable* executable
@@ -231,6 +261,8 @@ cdef extern from "xla/pjrt/c/pjrt_c_api.h" nogil:
         PJRT_Error* (*PJRT_Client_BufferFromHostBuffer)(PJRT_Client_BufferFromHostBuffer_Args* args) noexcept nogil
         PJRT_Error* (*PJRT_Executable_Destroy)(PJRT_Executable_Destroy_Args* args) noexcept nogil
         PJRT_Error* (*PJRT_Executable_NumOutputs)(PJRT_Executable_NumOutputs_Args* args) noexcept nogil
+        PJRT_Error* (*PJRT_Executable_OutputElementTypes)(PJRT_Executable_OutputElementTypes_Args* args) noexcept nogil
+        PJRT_Error* (*PJRT_Executable_OutputDimensions)(PJRT_Executable_OutputDimensions_Args* args) noexcept nogil
         PJRT_Error* (*PJRT_Executable_Serialize)(PJRT_Executable_Serialize_Args* args) noexcept nogil
         PJRT_Error* (*PJRT_LoadedExecutable_Destroy)(PJRT_LoadedExecutable_Destroy_Args* args) noexcept nogil
         PJRT_Error* (*PJRT_LoadedExecutable_GetExecutable)(PJRT_LoadedExecutable_GetExecutable_Args* args) noexcept nogil

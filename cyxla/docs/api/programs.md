@@ -6,6 +6,8 @@ Lowering, compiling and the records they return.
 
 ::: cyxla.lower
 
+::: cyxla.ArrayType
+
 ::: cyxla.LoweredProgram
 
 ::: cyxla.compile_program
