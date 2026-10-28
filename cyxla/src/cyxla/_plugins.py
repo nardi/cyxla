@@ -279,6 +279,23 @@ def initialize(
         return load_plugin(plugin, platform, options, jax_targets)
 
 
+def require_platform(platform: str | None) -> None:
+    """Loads the plugin for a platform unless one is loaded, and checks that it runs it.
+
+    Without a platform any plugin will do, so the default one loads. The loaded plugin
+    stays for the whole process, so a program for another platform cannot run.
+    """
+    if platform is None:
+        _runtime.ensure_initialized()
+        return
+    info = initialize(platform=platform)
+    if info.platform.lower() != platform.lower():
+        raise RuntimeError(
+            f"The program was lowered for {platform}, but the loaded plugin runs "
+            f"{info.platform}. A process loads one plugin."
+        )
+
+
 def load_plugin(
     plugin: Plugin | Path | None,
     platform: str | None,

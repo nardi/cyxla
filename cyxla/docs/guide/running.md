@@ -41,10 +41,15 @@ on, either globally or as a context manager around the call. The `input_types` o
 program record the dtype and shape of each argument. The function may have unused
 arguments. They stay in the signature, because callers pass every input of a program.
 
-Lowering targets the platform of the loaded plugin, or the CPU before any plugin is
-loaded. The `platform` argument lowers for another one, for instance to prepare programs
-on a machine without a GPU. A function that calls custom calls needs their names in
-`custom_calls`, as the [custom calls](custom-calls.md) page explains.
+Lowering chooses the platform the way JAX chooses where to run. The arguments may be
+arrays, or shapes with a sharding, and the platform of the device they are committed to
+wins. Next comes the device of `jax.default_device`, then the loaded plugin, then the
+first platform in `jax_platforms` that has a plugin, and last the plugin that cyxla
+would load by default. A program runs on one device, and cyxla starts no JAX backend to
+find out. The `platform` argument lowers for another platform, for instance to prepare
+programs on a machine without a GPU. The program records its platform, and
+`compile_program` loads the plugin for it. A function that calls custom calls needs
+their names in `custom_calls`, as the [custom calls](custom-calls.md) page explains.
 
 ## Compilation
 

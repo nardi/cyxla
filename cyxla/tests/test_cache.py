@@ -29,6 +29,7 @@ TYPED_PROGRAM = cx.LoweredProgram(
         cx.ArrayType(np.dtype(np.float32), (2, 3)),
         cx.ArrayType(np.dtype(ml_dtypes.bfloat16), ()),
     ),
+    platform="cpu",
 )
 """A stand-in for a lowered program with argument types."""
 
@@ -55,6 +56,7 @@ def test_encoding_round_trip() -> None:
         (encode_lowered(PROGRAMS).replace(b"module", b"\xffodule", 1), "Malformed"),
         (encode_lowered(PROGRAMS).replace(b"null", b"nul!", 1), "Malformed"),
         (encode_lowered(PROGRAMS).replace(b"float32", b"floatxx", 1), "Malformed"),
+        (encode_lowered(PROGRAMS).replace(b'"platform"', b'"platfom"', 1), "Malformed"),
     ],
 )
 def test_malformed_files(data: bytes, message: str) -> None:

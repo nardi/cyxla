@@ -106,10 +106,12 @@ range, because a new version may change the declarations.
 
 ## Plugins
 
-A process loads one plugin, and the first function that needs it loads the CPU plugin if
-one is installed, then CUDA, ROCm and TPU in that order. `cx.initialize` chooses a
-plugin or its options instead, and has to come before that first use.
-`cx.initialize(platform="cuda")` asks for a platform, and
+A process loads one plugin. `cx.lower` picks a platform like JAX does, from the device
+that the arguments are committed to, then `jax.default_device`, then the loaded plugin,
+then `jax_platforms`, and last the CPU plugin if one is installed, then CUDA, ROCm and
+TPU in that order. The program records the platform, and compiling it loads the plugin
+for that platform. `cx.initialize` chooses a plugin or its options instead, and has to
+come before that first use. `cx.initialize(platform="cuda")` asks for a platform, and
 `cx.initialize(Path("libpjrt.so"), platform="cpu")` loads a library by path. `python -m
 cyxla` lists what it finds.
 

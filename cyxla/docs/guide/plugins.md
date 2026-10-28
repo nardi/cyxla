@@ -24,6 +24,11 @@ A path loads that library, and `platform` then names the platform that it implem
 cx.initialize(Path("libpjrt.so"), platform="cpu")
 ```
 
+A lowered program records its platform, so `compile_program` loads the plugin for it
+when no plugin is loaded. The [running programs](running.md) guide describes how
+lowering follows the placement of the arguments and the default device of JAX. Compiling
+a program for another platform than the loaded plugin's raises an error.
+
 `python -m cyxla` lists every plugin that it finds and where it came from. A process
 loads one plugin, so later calls return the details of the first.
 [`runtime_info`][cyxla.runtime_info] returns the platform, the PJRT API version, and

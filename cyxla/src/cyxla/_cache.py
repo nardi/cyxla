@@ -21,7 +21,7 @@ from typing import NamedTuple
 
 import numpy as np
 
-from cyxla import _plugins, _runtime
+from cyxla import _plugins
 from cyxla._lowering import LoweredProgram
 from cyxla._runtime import Executable
 from cyxla._types import ArrayType
@@ -32,7 +32,7 @@ CACHE_ENVIRONMENT_VARIABLE = "CYXLA_CACHE_DIR"
 LOCATION_PATTERN = re.compile(r"^#loc.*$|\s*loc\((?:[^()]|\([^()]*\))*\)", re.MULTILINE)
 """Source locations in StableHLO text, which differ between traces of the same function."""
 
-LOWERED_MAGIC = b"CYXLA-LOWERED-2\n"
+LOWERED_MAGIC = b"CYXLA-LOWERED-3\n"
 """First bytes of a file of lowered programs."""
 
 
@@ -130,28 +130,43 @@ def encode_lowered(programs: Sequence[LoweredProgram | None]) -> bytes:
             parts.append(struct.pack("<B", 0))
             continue
         text = program.text.encode()
-        types = encode_types(program.input_types)
-        parts.append(struct.pack("<BQQQ", 1, len(program.code), len(text), len(types)))
-        parts += [program.code, text, types]
+        metadata = encode_metadata(program)
+        parts.append(
+            struct.pack("<BQQQ", 1, len(program.code), len(text), len(metadata))
+        )
+        parts += [program.code, text, metadata]
     return b"".join(parts)
 
 
-def encode_types(types: tuple[ArrayType, ...] | None) -> bytes:
-    """Returns argument types as JSON, with `null` for types that are not known."""
-    if types is None:
-        return b"null"
-    return json.dumps([[dtype.name, list(shape)] for dtype, shape in types]).encode()
+def encode_metadata(program: LoweredProgram) -> bytes:
+    """Returns the platform and argument types of a program as JSON.
+
+    Either is `null` when it is not known.
+    """
+    types = program.input_types
+    return json.dumps(
+        {
+            "platform": program.platform,
+            "input_types": None
+            if types is None
+            else [[dtype.name, list(shape)] for dtype, shape in types],
+        }
+    ).encode()
 
 
-def decode_types(data: bytes) -> tuple[ArrayType, ...] | None:
-    """Returns the argument types that `encode_types` wrote.
+def decode_metadata(data: bytes) -> tuple[tuple[ArrayType, ...] | None, str | None]:
+    """Returns the argument types and the platform that `encode_metadata` wrote.
 
     Raises a `ValueError` if the JSON is malformed, and a `TypeError` for an unknown dtype.
     """
-    entries = json.loads(data)
-    if entries is None:
-        return None
-    return tuple(ArrayType(np.dtype(name), tuple(shape)) for name, shape in entries)
+    metadata = json.loads(data)
+    entries = metadata["input_types"]
+    types = (
+        None
+        if entries is None
+        else tuple(ArrayType(np.dtype(name), tuple(shape)) for name, shape in entries)
+    )
+    return types, metadata["platform"]
 
 
 def decode_lowered(data: bytes) -> tuple[LoweredProgram | None, ...]:
@@ -177,10 +192,16 @@ def decode_lowered(data: bytes) -> tuple[LoweredProgram | None, ...]:
             code = data[offset : offset + code_size]
             text_end = offset + code_size + text_size
             text = data[offset + code_size : text_end].decode()
-            types = decode_types(data[text_end:end])
+            types, platform = decode_metadata(data[text_end:end])
             offset = end
-            programs.append(LoweredProgram(code, text, types))
-    except (struct.error, UnicodeDecodeError, TypeError, ValueError) as error:
+            programs.append(LoweredProgram(code, text, types, platform))
+    except (
+        struct.error,
+        UnicodeDecodeError,
+        TypeError,
+        ValueError,
+        KeyError,
+    ) as error:
         raise ValueError(f"Malformed file of lowered programs: {error}.") from error
     if offset != len(data):
         raise ValueError("Malformed file of lowered programs: trailing bytes.")
@@ -209,7 +230,7 @@ def store_lowered(key: str, programs: Sequence[LoweredProgram | None]) -> None:
 
 def executable_key(program: LoweredProgram) -> str:
     """Returns the cache key of a program's executable for the loaded plugin."""
-    _runtime.ensure_initialized()
+    _plugins.require_platform(program.platform)
     plugin = _plugins.loaded_plugin
     if plugin is None:
         raise RuntimeError("The loaded PJRT plugin is not recorded.")
@@ -223,10 +244,12 @@ def compile_program(
 ) -> tuple[Executable, CompileStatistics]:
     """Compiles a program, or loads its executable from the disk cache.
 
-    A cached executable that the plugin rejects is removed and compiled again. The
+    The plugin for the platform of the program loads first, unless a plugin is loaded
+    already. A cached executable that the plugin rejects is removed and compiled again. The
     executable takes the argument types of the program, so `Executable.run` converts its
     arguments to them.
     """
+    _plugins.require_platform(program.platform)
     path = cache_directory() / f"{executable_key(program)}.pjrt" if disk_cache else None
     if path is not None and path.exists():
         start = time.perf_counter()
