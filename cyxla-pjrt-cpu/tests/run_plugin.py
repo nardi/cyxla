@@ -6,7 +6,7 @@ import numpy as np
 
 import cyxla as cx
 
-cx.enable_x64()
+jax.config.update("jax_enable_x64", True)
 (plugin,) = [p for p in cx.available_plugins() if p.source == "cyxla-pjrt-cpu"]
 info = cx.initialize(plugin)
 print(plugin.path, info)
@@ -14,6 +14,7 @@ shapes = (jax.ShapeDtypeStruct((3,), jnp.float64),)
 program = cx.lower(lambda x: jnp.sin(x) * 2 + jnp.sum(x), shapes)
 executable, _ = cx.compile_program(program, disk_cache=False)
 values = np.array([0.0, 1.0, 2.0])
-(result,) = executable.run([values], [3])
+(result,) = executable.run([values])
 np.testing.assert_allclose(result, np.sin(values) * 2 + values.sum())
+assert result.dtype == np.float64
 assert info.platform == "cpu" and info.aliased_inputs
