@@ -8,8 +8,8 @@ functions.
 
 A PJRT plugin is a separate build of XLA, and it knows none of these functions. The
 program compiles only after each target is registered with the plugin by name. cyxla
-does that for the kernels of jaxlib, and it gives libraries two ways to do it
-themselves.
+does that for the kernels of jaxlib and for everything else that libraries register with
+JAX.
 
 ## Linear algebra
 
@@ -54,11 +54,16 @@ here, because CI has no GPU.
 ## Handlers of other libraries
 
 A library with its own primitives implements a typed FFI handler in C++ and registers it
-with `jax.ffi.register_ffi_target`. That call tells JAX about the handler. cyxla needs
-the same address, and there are two ways to give it.
+with `jax.ffi.register_ffi_target`. That call tells JAX about the handler, and cyxla
+passes it on to the plugin. Importing cyxla replaces `register_custom_call_target` of
+jaxlib with a function that registers each later handler with the plugin as well. The
+handlers that libraries registered before the import are found when the plugin loads,
+because cyxla reads them from the registry that JAX keeps. The order of the imports
+therefore does not matter.
 
-`register_ffi_target` takes the arguments of the JAX function, so a library can call
-both. The handler is a `PyCapsule`, as JAX takes it, or the address as an integer.
+A library that does not use JAX can call `register_ffi_target` of cyxla, which takes the
+arguments of the JAX function. The handler is a `PyCapsule`, as JAX takes it, or the
+address as an integer.
 
 ```python
 import ctypes
@@ -73,21 +78,14 @@ jax.ffi.register_ffi_target("my_target", capsule, platform="cpu")
 cx.register_ffi_target("my_target", capsule, platform="cpu")
 ```
 
-`mirror_jax_registrations` does it for every library. After one call, whatever is
-registered through `jax.ffi.register_ffi_target` also reaches the plugin, so the
-libraries work unchanged. Call it before importing them. A library that was imported
-earlier is not covered, and neither are handlers of the untyped interface.
+Setting `CYXLA_MIRROR_JAX=0` leaves the function of jaxlib alone. Handlers then reach
+the plugin through `register_ffi_target` and through the registry at load time, and
+`mirror_jax_registrations` installs the mirror later.
 
-```python
-cx.mirror_jax_registrations()
-# The library registers its handlers with JAX, and now with the plugin too.
-import my_library
-```
-
-A handler registers for one platform, and registrations for another platform than the
-plugin's wait unused. Handlers that need other stages than `execute`, such as an
-`instantiate` stage for state, are refused, because the PJRT interface takes one
-function.
+Handlers of the untyped interface are never mirrored. A handler registers for one
+platform, and registrations for another platform than the plugin's wait unused. A
+handler with stages other than `execute`, such as an `instantiate` stage for state, is
+skipped with a warning, because the PJRT interface takes one function.
 
 ## Custom calls in lowered functions
 
@@ -115,4 +113,4 @@ the caller adds the library to the distributions of `cache_key`.
 - `jax.pure_callback` and `jax.experimental.io_callback` call back into Python, which
   the plugin cannot do. JAX refuses to serialize them.
 - A target that nobody registered fails to compile with "No FFI handler registered for"
-  and the target name, followed by a reminder of the two ways above.
+  and the target name, followed by a reminder to register it.

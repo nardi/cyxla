@@ -247,8 +247,8 @@ def compile_program(
         if "No FFI handler registered" not in str(error):
             raise
         raise RuntimeError(
-            f"{error}\nRegister the target with `cyxla.register_ffi_target`, or call "
-            "`cyxla.mirror_jax_registrations` before the library that provides it is imported."
+            f"{error}\nRegister the target with `cyxla.register_ffi_target` or "
+            "`jax.ffi.register_ffi_target`."
         ) from error
     executable.input_types = program.input_types
     statistics = CompileStatistics(
@@ -260,8 +260,10 @@ def compile_program(
 
 
 def enable_x64() -> None:
-    """Switches JAX to 64-bit mode, which `float64`, `int64` and `complex128` programs need.
+    """Switches JAX to 64-bit mode for the whole process.
 
-    Without it JAX lowers every function to 32-bit types.
+    `lower` already traces a function with a 64-bit argument in that mode. This is for a
+    function that creates 64-bit values out of 32-bit arguments, which JAX would otherwise
+    keep as 32-bit types.
     """
     jax.config.update("jax_enable_x64", True)

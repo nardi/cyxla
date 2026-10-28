@@ -56,4 +56,8 @@ The registry of the plugin is not the one in jaxlib, even when both are XLA, so 
 registers handlers through the PJRT FFI extension. A registration holds the address of
 an `XLA_FFI_Handler`, which the plugin calls once to read the handler's metadata.
 jaxlib's handlers and the handlers of third-party libraries are the same kind of
-function, so both register the same way.
+function, so both register the same way. JAX keeps its registrations in two places, a
+queue in `jaxlib.xla_client` until the backend of the platform starts and the registry
+of jaxlib afterwards. cyxla reads both when the plugin loads, and it wraps
+`register_custom_call_target` of jaxlib when it is imported, which covers the
+registrations that come later.

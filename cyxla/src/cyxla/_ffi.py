@@ -10,6 +10,7 @@ program compiles. The plugin accepts typed FFI handlers only, and only their `ex
 import contextlib
 import ctypes
 import importlib
+import os
 import warnings
 from collections.abc import Callable, Mapping
 from typing import Any, NamedTuple
@@ -18,6 +19,9 @@ from cyxla import _runtime
 
 COMMAND_BUFFER_COMPATIBLE = 1
 """Handler trait that allows capturing the handler into a GPU command buffer."""
+
+MIRROR_ENVIRONMENT_VARIABLE = "CYXLA_MIRROR_JAX"
+"""Environment variable that turns the mirror of JAX's registrations off when it is `0`."""
 
 JAXLIB_MODULES = (
     "jaxlib.lapack",
@@ -157,13 +161,52 @@ def register_ffi_target(
     apply_targets()
 
 
-def jax_targets(platform: str) -> list[tuple[str, Any]]:
-    """Returns the typed handlers that jaxlib ships for a platform as name and capsule.
+def registry_targets(platform: str) -> list[tuple[str, Any, bool]]:
+    """Returns the typed handlers in the registry of JAX for a platform.
 
-    The capsule is typed `Any` because it is an opaque object of the C API of Python.
+    Each entry is a name, a handler and whether the handler is command buffer compatible.
+    JAX keeps a registration in one of two places. Until the backend of the platform starts,
+    `jaxlib.xla_client` queues it together with its traits. Afterwards it sits in the
+    registry of jaxlib, which lists typed handlers as mappings of stages. A bare value would
+    be an untyped handler and is skipped. Both places are private to jaxlib, so a version
+    of jaxlib without them contributes nothing. The handler is typed `Any` for the reason given at `handler_address`.
+    """
+    from jaxlib import xla_client
+
+    wanted = platform_key(platform)
+    found: dict[str, tuple[Any, bool]] = {}
+    queued: dict[str, list[tuple[str, Any, int, Any]]] = getattr(
+        xla_client, "_custom_callback", {}
+    )
+    for queued_platform, entries in list(queued.items()):
+        if platform_key(queued_platform) != wanted:
+            continue
+        for name, handler, api_version, traits in list(entries):
+            if api_version >= 1:
+                compatible = bool(int(traits) & COMMAND_BUFFER_COMPATIBLE)
+                found[name] = (handler, compatible)
+    with contextlib.suppress(ImportError, AttributeError):
+        registry = importlib.import_module("jaxlib._jax")
+        spelling = PLATFORM_SPELLINGS.get(wanted, wanted)
+        for name, handler in registry.custom_call_targets(spelling).items():
+            if isinstance(handler, Mapping):
+                found.setdefault(name, (handler, False))
+    return [
+        (name, handler, compatible) for name, (handler, compatible) in found.items()
+    ]
+
+
+def jax_targets(platform: str) -> list[tuple[str, Any, bool]]:
+    """Returns the typed handlers that JAX knows for a platform.
+
+    These are the handlers in the registry of JAX, such as the ones that libraries
+    registered with `jax.ffi.register_ffi_target`, and the ones that the modules of jaxlib
+    ship. Each entry is a name, a handler and whether the handler is command buffer
+    compatible. The handler is typed `Any` because it is an opaque object of the C API of
+    Python.
     """
     wanted = platform_key(platform)
-    found = []
+    found: dict[str, tuple[Any, bool]] = {}
     for module_name in JAXLIB_MODULES:
         try:
             module = importlib.import_module(module_name)
@@ -177,19 +220,29 @@ def jax_targets(platform: str) -> list[tuple[str, Any]]:
         for module_platform, entries in registrations().items():
             if platform_key(module_platform) != wanted:
                 continue
-            found.extend(
-                (name, value) for name, value, version in entries if version >= 1
-            )
-    return found
+            for name, value, version in entries:
+                if version >= 1:
+                    found[name] = (value, False)
+    found.update(
+        {
+            name: (handler, compatible)
+            for name, handler, compatible in registry_targets(wanted)
+        }
+    )
+    return [
+        (name, handler, compatible) for name, (handler, compatible) in found.items()
+    ]
 
 
 def register_jax_targets(platform: str | None = None) -> int:
-    """Registers the handlers that jaxlib ships, and returns how many were new.
+    """Registers the handlers that JAX knows, and returns how many were new.
 
-    This is what makes `jnp.linalg` programs compile on the CPU: it registers the LAPACK
-    kernels of jaxlib and loads the LAPACK functions of SciPy that they call. Handlers of
-    the older untyped interface are left out, as the plugin cannot run them. A plugin
-    without FFI support gets none.
+    This covers the LAPACK kernels of jaxlib, which make `jnp.linalg` programs compile on
+    the CPU, and everything else in the registry of JAX, such as the handlers of libraries
+    that registered with `jax.ffi.register_ffi_target` before cyxla was imported. It also
+    loads the LAPACK functions of SciPy that the kernels call. Handlers of the older untyped
+    interface are left out, as the plugin cannot run them, and so are handlers that the
+    plugin cannot take, which raise a warning. A plugin without FFI support gets none.
     """
     _runtime.ensure_initialized()
     if not _runtime.supports_ffi():
@@ -199,9 +252,30 @@ def register_jax_targets(platform: str | None = None) -> int:
         with contextlib.suppress(ImportError):
             importlib.import_module("jaxlib.cpu._lapack").initialize()
     before = len(targets)
-    for name, capsule in jax_targets(chosen):
-        register_ffi_target(name, capsule, chosen)
+    for name, handler, compatible in jax_targets(chosen):
+        register_mirrored(name, handler, chosen, compatible)
     return len(targets) - before
+
+
+def register_mirrored(
+    name: str, handler: Any, platform: str, command_buffer_compatible: bool
+) -> None:
+    """Registers a handler of JAX, with a warning instead of an error if it cannot run.
+
+    The handler is typed `Any` for the reason given at `handler_address`.
+    """
+    try:
+        register_ffi_target(
+            name,
+            handler,
+            platform,
+            command_buffer_compatible=command_buffer_compatible,
+        )
+    except (ValueError, TypeError) as error:
+        warnings.warn(
+            f"The FFI target {name} is not available to cyxla: {error}",
+            stacklevel=3,
+        )
 
 
 def mirror_jax_registrations() -> None:
@@ -209,9 +283,10 @@ def mirror_jax_registrations() -> None:
 
     A library that supports JAX's FFI calls `jax.ffi.register_ffi_target` when it is
     imported. After this call, such a handler is also registered with the PJRT plugin, so
-    the library works in programs that cyxla compiles without changes. Libraries imported
-    before this call are not covered, and neither are handlers of the older untyped
-    interface. Calling it again does nothing.
+    the library works in programs that cyxla compiles without changes. Handlers of the
+    older untyped interface are not covered. Registrations from before the call are not
+    seen here, but loading the plugin registers them from the registry of JAX. Importing
+    cyxla calls this unless `CYXLA_MIRROR_JAX` is `0`, and calling it again does nothing.
     """
     global jax_registration
     from jaxlib import xla_client
@@ -229,21 +304,17 @@ def mirror_jax_registrations() -> None:
         traits: xla_client.CustomCallTargetTraits = xla_client.CustomCallTargetTraits.DEFAULT,
     ) -> None:
         original(name, fn, platform, api_version, traits)
-        if api_version < 1:
-            return
-        try:
-            register_ffi_target(
-                name,
-                fn,
-                platform,
-                command_buffer_compatible=bool(int(traits) & COMMAND_BUFFER_COMPATIBLE),
-            )
-        except (ValueError, TypeError) as error:
-            warnings.warn(
-                f"The FFI target {name} is not available to cyxla: {error}",
-                stacklevel=2,
+        if api_version >= 1:
+            register_mirrored(
+                name, fn, platform, bool(int(traits) & COMMAND_BUFFER_COMPATIBLE)
             )
 
     # The module dictionary is written, because the type checker forbids assigning to a
     # function of a module.
     vars(xla_client)["register_custom_call_target"] = mirrored
+
+
+def mirror_by_default() -> None:
+    """Mirrors the registrations of JAX unless the environment turns that off."""
+    if os.environ.get(MIRROR_ENVIRONMENT_VARIABLE) != "0":
+        mirror_jax_registrations()

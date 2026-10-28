@@ -22,6 +22,8 @@ from cyxla._cache import (
     store_lowered,
 )
 from cyxla._ffi import (
+    MIRROR_ENVIRONMENT_VARIABLE,
+    mirror_by_default,
     mirror_jax_registrations,
     register_ffi_target,
     register_jax_targets,
@@ -45,6 +47,8 @@ from cyxla._runtime import (
 from cyxla._types import ArrayType, ErrorInfo, OptionValue, Plugin, RuntimeInfo
 
 __version__ = importlib.metadata.version("cyxla")
+
+mirror_by_default()
 
 ABI_VERSION = abi_version()
 """Version of the declarations in `_runtime.pxd` that this installation was compiled with."""
@@ -77,6 +81,7 @@ def get_include() -> list[str]:
 __all__ = [
     "ABI_VERSION",
     "CACHE_ENVIRONMENT_VARIABLE",
+    "MIRROR_ENVIRONMENT_VARIABLE",
     "PLATFORM_ENVIRONMENT_VARIABLE",
     "PLUGIN_ENVIRONMENT_VARIABLE",
     "ArrayType",

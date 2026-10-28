@@ -54,9 +54,9 @@ assert np.allclose(factor, np.linalg.cholesky(matrix))
 ```
 
 The first function that needs a plugin loads the default one, so a program needs no
-setup call. JAX lowers to 32-bit types unless `cx.enable_x64()` switches it to 64 bits.
-Arguments and results can be `bool`, 8 to 64-bit integers, `float16`, `bfloat16`,
-`float32`, `float64`, `complex64` and `complex128`.
+setup call. JAX lowers to 32-bit types, but `cx.lower` switches to 64 bits for a
+function with a 64-bit argument. Arguments and results can be `bool`, 8 to 64-bit
+integers, `float16`, `bfloat16`, `float32`, `float64`, `complex64` and `complex128`.
 
 `Executable.run` returns arrays with the shapes and dtypes of the outputs, and converts
 arguments to the types that the program takes. It is for tests and interactive checks.
@@ -134,21 +134,19 @@ as `cyxla_pjrt_cpu` has.
 Some JAX functions lower to custom calls, which are native functions that the program
 runs. On the CPU, `jnp.linalg` and `jax.scipy.linalg` call the LAPACK kernels that
 jaxlib ships. A PJRT plugin is a separate build of XLA that does not know them, so
-Loading the plugin registers jaxlib's typed FFI handlers with it by name. Programs with
+loading the plugin registers jaxlib's typed FFI handlers with it by name. Programs with
 `cholesky`, `solve`, `svd`, `eigh`, `qr`, `lu`, `eigvals` and the other linear algebra
 functions then compile and run like they do in JAX.
 
 A library with its own primitives registers a typed FFI handler with
-`jax.ffi.register_ffi_target`, which only tells JAX about it. cyxla needs the handler as
-well, and there are two ways to give it. Call `cx.register_ffi_target` with the same
-arguments, or call `cx.mirror_jax_registrations()` once before importing the library, so
-that everything it registers with JAX reaches the plugin too. `jax.export` refuses
-custom calls it has no compatibility promise for, so `cx.lower` takes the names of the
-targets that the function may call.
+`jax.ffi.register_ffi_target`, and cyxla passes it on to the plugin. Importing cyxla
+mirrors every later registration, and loading the plugin registers the ones that JAX
+already holds, so the order of the imports does not matter. A library that does not use
+JAX calls `cx.register_ffi_target` with the same arguments. `jax.export` refuses custom
+calls it has no compatibility promise for, so `cx.lower` takes the names of the targets
+that the function may call.
 
 ```python
-cx.mirror_jax_registrations()
-# The library registers its handlers with JAX, and now with the plugin too.
 import my_library
 
 program = cx.lower(my_library.function, shapes, custom_calls=["my_target"])
@@ -174,6 +172,7 @@ distributions that the caller names.
 | `CYXLA_PJRT_PLUGIN` | Path of a plugin that replaces the installed ones |
 | `CYXLA_PLATFORM` | Platform to load when `initialize` gets none |
 | `CYXLA_CACHE_DIR` | Directory of the disk cache, `~/.cache/cyxla` if unset |
+| `CYXLA_MIRROR_JAX` | Set to `0` to keep cyxla from mirroring the FFI registrations of JAX |
 
 ## Limitations
 

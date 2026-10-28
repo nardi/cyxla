@@ -1,5 +1,6 @@
 """Lowering of JAX functions to StableHLO bytecode that a PJRT plugin compiles."""
 
+import contextlib
 from collections.abc import Callable, Sequence
 from typing import Any, NamedTuple
 
@@ -8,6 +9,11 @@ import numpy as np
 
 from cyxla import _plugins, _runtime
 from cyxla._types import ArrayType
+
+WIDE_DTYPES = frozenset(
+    np.dtype(name) for name in ("float64", "int64", "uint64", "complex128")
+)
+"""The dtypes that JAX holds as 32-bit types unless its 64-bit mode is on."""
 
 LOWERING_PLATFORMS = frozenset({"cpu", "cuda", "rocm", "tpu"})
 """Platforms that `jax.export` lowers for, which are also the names the plugins report."""
@@ -59,16 +65,24 @@ def lower(
     program. `jax.export` refuses custom calls that it knows no compatibility guarantees
     for, such as the targets of third-party libraries, so `custom_calls` names the targets
     that the function may call. The kernels of `jnp.linalg` need no entry.
+
+    A function with an argument of a 64-bit type (`float64`, `int64`, `uint64` or
+    `complex128`) is traced in JAX's 64-bit mode, whatever the setting of the process is,
+    because JAX would turn the argument into a 32-bit type otherwise. The setting is
+    restored afterwards. A function that creates 64-bit values out of 32-bit arguments
+    needs `enable_x64` instead.
     """
+    wide = any(is_wide(shape) for shape in shapes)
     try:
-        exported = jax.export.export(
-            jax.jit(function, keep_unused=True),
-            platforms=[lowering_platform(platform)],
-            disabled_checks=[
-                jax.export.DisabledSafetyCheck.custom_call(name)
-                for name in custom_calls
-            ],
-        )(*shapes)
+        with jax.enable_x64(True) if wide else contextlib.nullcontext():
+            exported = jax.export.export(
+                jax.jit(function, keep_unused=True),
+                platforms=[lowering_platform(platform)],
+                disabled_checks=[
+                    jax.export.DisabledSafetyCheck.custom_call(name)
+                    for name in custom_calls
+                ],
+            )(*shapes)
     except ValueError as error:
         if "no compatibility guarantees" not in str(error):
             raise
@@ -84,6 +98,14 @@ def lower(
         text=exported.mlir_module(),
         input_types=input_types,
     )
+
+
+def is_wide(shape: jax.ShapeDtypeStruct) -> bool:
+    """Returns whether an argument has a 64-bit dtype, which is not a key or other extended type."""
+    try:
+        return np.dtype(shape.dtype) in WIDE_DTYPES
+    except TypeError:
+        return False
 
 
 def array_type(aval: Any, subject: str = "An argument") -> ArrayType:

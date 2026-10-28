@@ -57,3 +57,4 @@ library without any entry point.
 | `CYXLA_PJRT_PLUGIN` | Path of a plugin that replaces the installed ones |
 | `CYXLA_PLATFORM` | Platform to load when `initialize` gets none |
 | `CYXLA_CACHE_DIR` | Directory of the disk cache, `~/.cache/cyxla` if unset |
+| `CYXLA_MIRROR_JAX` | Set to `0` to keep cyxla from mirroring the FFI registrations of JAX |

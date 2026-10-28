@@ -1,8 +1,12 @@
 """Tests of FFI handlers: the kernels of jnp.linalg and the targets of other libraries."""
 
 import ctypes
+import importlib
 import itertools
-from collections.abc import Callable, Iterator
+import sys
+import types
+from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 import jax
@@ -205,20 +209,33 @@ def test_untyped_targets_are_rejected_by_the_plugin() -> None:
         cx.compile_program(program, disk_cache=False)
 
 
-@pytest.fixture
-def mirror() -> Iterator[None]:
-    """Installs the mirror of JAX's registrations and removes it afterwards."""
-    original = xla_client.register_custom_call_target
+def test_mirror_is_installed_when_cyxla_is_imported() -> None:
+    """Checks that importing cyxla mirrors JAX's registrations and that a second call is a no-op."""
+    mirrored = xla_client.register_custom_call_target
+    assert _ffi.jax_registration is not None and mirrored is not _ffi.jax_registration
     cx.mirror_jax_registrations()
-    cx.mirror_jax_registrations()
-    yield
-    vars(xla_client)["register_custom_call_target"] = original
-    _ffi.jax_registration = None
+    assert xla_client.register_custom_call_target is mirrored
 
 
-def test_mirror_registers_what_libraries_register(
-    ffi_library: ctypes.CDLL, mirror: None
-) -> None:
+def test_mirror_can_be_turned_off() -> None:
+    """Checks that the environment variable stops cyxla from replacing the function of JAX."""
+    code = """
+        from jaxlib import xla_client
+        original = xla_client.register_custom_call_target
+        import cyxla as cx
+        from cyxla import _ffi
+
+        assert xla_client.register_custom_call_target is original
+        assert _ffi.jax_registration is None
+        """
+    assert run_python(code, {cx.MIRROR_ENVIRONMENT_VARIABLE: "0"}).returncode == 0
+    mirrored = code.replace("is original", "is not original").replace(
+        "is None", "is not None"
+    )
+    assert run_python(mirrored).returncode == 0
+
+
+def test_mirror_registers_what_libraries_register(ffi_library: ctypes.CDLL) -> None:
     """Checks that `jax.ffi.register_ffi_target` also reaches the plugin."""
     name = f"cyxla_test_mirror_{next(COUNTER)}"
     capsule = jax.ffi.pycapsule(ctypes.CFUNCTYPE(None)(ffi_library.scale_handler()))
@@ -234,9 +251,7 @@ def test_mirror_registers_what_libraries_register(
     )
 
 
-def test_mirror_skips_what_the_plugin_cannot_run(
-    ffi_library: ctypes.CDLL, mirror: None
-) -> None:
+def test_mirror_skips_what_the_plugin_cannot_run(ffi_library: ctypes.CDLL) -> None:
     """Checks that untyped handlers and handlers with several stages are not mirrored."""
     capsule = jax.ffi.pycapsule(ctypes.CFUNCTYPE(None)(ffi_library.scale_handler()))
     untyped = f"cyxla_test_untyped_{next(COUNTER)}"
@@ -295,16 +310,17 @@ def test_jax_targets_skip_missing_modules(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setattr(
         _ffi, "JAXLIB_MODULES", ("jaxlib.no_such_module", "jax", "jaxlib.lapack")
     )
-    names = {name for name, _ in _ffi.jax_targets("cpu")}
+    names = {name for name, *_ in _ffi.jax_targets("cpu")}
     assert "lapack_dpotrf_ffi" in names
-    assert not {name for name, _ in _ffi.jax_targets("cuda")}
+    assert not {name for name, *_ in _ffi.jax_targets("rocm")}
 
 
 def test_jax_targets_of_another_platform_wait() -> None:
     """Checks that registering the handlers of jaxlib for a GPU platform keeps them waiting."""
-    names = {name for name, _ in _ffi.jax_targets("cuda")}
-    assert cx.register_jax_targets("cuda") == len(names)
+    names = {name for name, *_ in _ffi.jax_targets("cuda")}
+    assert cx.register_jax_targets("cuda") >= 0
     assert all(("cuda", name) in _ffi.targets for name in names)
+    assert not any(("cuda", name) in _ffi.applied for name in names)
 
 
 def test_lowering_passes_other_errors_on() -> None:
@@ -315,3 +331,132 @@ def test_lowering_passes_other_errors_on() -> None:
 
     with pytest.raises(ValueError, match="The function is broken."):
         cx.lower(function, (jax.ShapeDtypeStruct((4,), jnp.float64),))
+
+
+def test_registry_lists_typed_handlers(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Checks what the registry of JAX contributes: live entries, queued ones and traits."""
+    live = {name for name, *_ in _ffi.registry_targets("cpu")}
+    assert {"lapack_dpotrf_ffi", "lapack_dgetrf_ffi"} <= live
+    traits = xla_client.CustomCallTargetTraits.COMMAND_BUFFER_COMPATIBLE
+    default = xla_client.CustomCallTargetTraits.DEFAULT
+    queued = {
+        "CUDA": [
+            ("queued_fast", 4096, 1, traits),
+            ("queued_slow", 8192, 1, default),
+            ("queued_untyped", 12288, 0, default),
+        ],
+        "Host": [("queued_host", 16384, 1, default)],
+    }
+    monkeypatch.setattr(xla_client, "_custom_callback", queued)
+    assert _ffi.registry_targets("gpu") == [
+        ("queued_fast", 4096, True),
+        ("queued_slow", 8192, False),
+    ]
+    assert ("queued_host", 16384, False) in _ffi.registry_targets("cpu")
+    assert _ffi.registry_targets("rocm") == []
+
+
+def test_registry_skips_bare_values(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Checks that only handlers listed as mappings of stages are taken from the registry."""
+    registry = importlib.import_module("jaxlib._jax")
+    monkeypatch.setattr(xla_client, "_custom_callback", {})
+    monkeypatch.setattr(
+        registry,
+        "custom_call_targets",
+        lambda spelling: {"bare": 4096, "staged": {"execute": 8192}},
+    )
+    assert _ffi.registry_targets("cpu") == [("staged", {"execute": 8192}, False)]
+
+
+def test_registry_without_private_parts(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Checks that a jaxlib without the private registry contributes nothing."""
+    registry = importlib.import_module("jaxlib._jax")
+    monkeypatch.delattr(xla_client, "_custom_callback")
+    monkeypatch.delattr(registry, "custom_call_targets")
+    assert _ffi.registry_targets("cpu") == []
+
+
+def test_jax_targets_skip_untyped_registrations(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Checks that a module of jaxlib lists untyped handlers that cyxla leaves out."""
+    module = types.SimpleNamespace(
+        registrations=lambda: {
+            "cpu": [("fake_typed", 4096, 1), ("fake_untyped", 8192, 0)]
+        }
+    )
+    monkeypatch.setitem(sys.modules, "fake_registrations", module)
+    monkeypatch.setattr(_ffi, "JAXLIB_MODULES", ("fake_registrations",))
+    names = {name for name, *_ in _ffi.jax_targets("cpu")}
+    assert "fake_typed" in names and "fake_untyped" not in names
+
+
+@pytest.mark.parametrize("backend_started", [False, True])
+def test_handlers_registered_before_cyxla_are_found(
+    ffi_library_path: Path, backend_started: bool
+) -> None:
+    """Checks that a handler registered with JAX before cyxla is imported reaches the plugin.
+
+    Before the JAX backend starts the registration is queued, and afterwards it goes to the
+    registry of jaxlib, so both are tried.
+    """
+    result = run_python(
+        f"""
+        import ctypes
+
+        import jax
+        import jax.numpy as jnp
+        import numpy as np
+
+        if {backend_started!r}:
+            jnp.zeros(1).block_until_ready()
+        library = ctypes.CDLL({str(ffi_library_path)!r})
+        library.scale_handler.restype = ctypes.c_void_p
+        capsule = jax.ffi.pycapsule(ctypes.CFUNCTYPE(None)(library.scale_handler()))
+        jax.ffi.register_ffi_target("early_scale", capsule, platform="cpu")
+
+        import cyxla as cx
+
+        def function(x):
+            call = jax.ffi.ffi_call("early_scale", jax.ShapeDtypeStruct(x.shape, x.dtype))
+            return call(x, factor=np.float64(3.0)) + 1.0
+
+        program = cx.lower(
+            function, (jax.ShapeDtypeStruct((4,), jnp.float64),), custom_calls=["early_scale"]
+        )
+        executable, _ = cx.compile_program(program, disk_cache=False)
+        (result,) = executable.run([np.arange(4.0)])
+        assert result.tolist() == [1.0, 4.0, 7.0, 10.0], result
+        """
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_handlers_the_plugin_cannot_take_raise_a_warning(
+    ffi_library_path: Path,
+) -> None:
+    """Checks that a handler of JAX with several stages is skipped with a warning at load."""
+    result = run_python(
+        f"""
+        import ctypes
+        import warnings
+
+        import jax
+
+        library = ctypes.CDLL({str(ffi_library_path)!r})
+        library.scale_handler.restype = ctypes.c_void_p
+        capsule = jax.ffi.pycapsule(ctypes.CFUNCTYPE(None)(library.scale_handler()))
+        jax.ffi.register_ffi_target(
+            "early_staged", {{"execute": capsule, "prepare": capsule}}, platform="cpu"
+        )
+
+        import cyxla as cx
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            cx.runtime_info()
+        messages = [str(warning.message) for warning in caught]
+        assert any("early_staged" in message and "execute stage" in message for message in messages), messages
+        """
+    )
+    assert result.returncode == 0, result.stderr

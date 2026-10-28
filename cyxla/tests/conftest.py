@@ -128,8 +128,8 @@ def sample_libraries(tmp_path_factory: pytest.TempPathFactory) -> SampleLibrarie
 
 
 @pytest.fixture(scope="session")
-def ffi_library(tmp_path_factory: pytest.TempPathFactory) -> ctypes.CDLL:
-    """Builds the library in `tests/ffi_library` with Meson and returns it loaded."""
+def ffi_library_path(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Builds the library in `tests/ffi_library` with Meson and returns its path."""
     build = tmp_path_factory.mktemp("ffi_library")
     source = Path(__file__).parent / "ffi_library"
     for command in (
@@ -153,6 +153,12 @@ def ffi_library(tmp_path_factory: pytest.TempPathFactory) -> ctypes.CDLL:
         for path in build.iterdir()
         if "scale" in path.name and path.suffix in (".so", ".dylib", ".dll")
     ]
-    library = ctypes.CDLL(str(path))
+    return path
+
+
+@pytest.fixture(scope="session")
+def ffi_library(ffi_library_path: Path) -> ctypes.CDLL:
+    """Returns the library of `ffi_library_path` loaded."""
+    library = ctypes.CDLL(str(ffi_library_path))
     library.scale_handler.restype = ctypes.c_void_p
     return library

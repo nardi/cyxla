@@ -8,3 +8,5 @@ guide](../guide/custom-calls.md) explains when each is needed.
 ::: cyxla.register_jax_targets
 
 ::: cyxla.mirror_jax_registrations
+
+::: cyxla.MIRROR_ENVIRONMENT_VARIABLE
