@@ -57,7 +57,8 @@ one for their platform.
 The `cyxla-pjrt-cpu` workflow builds the plugin on four platforms, packs the wheels,
 installs each wheel and runs a program on it. A tag `cyxla-v<version>` publishes cyxla
 to PyPI, and `cyxla-pjrt-cpu-v<version>` does the same for the plugin package with
-trusted publishing.
+trusted publishing. Running either workflow by hand with `release` set does the same
+from `main`, and it creates the tag itself, for a session that cannot push tags.
 
 ## Documentation
 

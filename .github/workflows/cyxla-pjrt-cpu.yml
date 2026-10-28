@@ -2,7 +2,9 @@ name: cyxla-pjrt-cpu
 
 # The plugin is built from XLA with the Bazel options of jaxlib, one library per platform.
 # Pushes to any branch build it, so a change can be checked before it reaches main. A tag
-# also publishes the libraries as release assets and the wheels to PyPI.
+# also publishes the libraries as release assets and the wheels to PyPI. Running the workflow
+# by hand with `release` set does the same from main and creates the tag, for a session that
+# cannot push tags.
 on:
   push:
     branches: ["**"]
@@ -14,6 +16,12 @@ on:
     paths:
       - "cyxla-pjrt-cpu/**"
       - ".github/workflows/cyxla-pjrt-cpu.yml"
+  workflow_dispatch:
+    inputs:
+      release:
+        description: Publish the version of pyproject.toml from main, which also tags the commit
+        type: boolean
+        default: false
 
 defaults:
   run:
@@ -190,7 +198,9 @@ jobs:
 
   release:
     needs: check
-    if: startsWith(github.ref, 'refs/tags/cyxla-pjrt-cpu-v')
+    if: >-
+      startsWith(github.ref, 'refs/tags/cyxla-pjrt-cpu-v') ||
+      (github.event_name == 'workflow_dispatch' && inputs.release && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
@@ -198,6 +208,19 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v4
+
+      # The version in `pyproject.toml` names the release. A pushed tag has to match it, so a
+      # mistyped tag cannot publish another version.
+      - name: Name the tag
+        id: tag
+        run: |
+          version=$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
+          tag="cyxla-pjrt-cpu-v$version"
+          if [ "$GITHUB_REF_TYPE" = tag ] && [ "$GITHUB_REF_NAME" != "$tag" ]; then
+            echo "The tag $GITHUB_REF_NAME does not match version $version of pyproject.toml." >&2
+            exit 1
+          fi
+          echo "name=$tag" >> "$GITHUB_OUTPUT"
 
       - name: Download the libraries
         uses: actions/download-artifact@v4
@@ -216,6 +239,7 @@ jobs:
       - name: Publish the libraries as release assets
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.name }}
         run: |
           mkdir assets
           for directory in libraries/library-*; do
@@ -225,8 +249,8 @@ jobs:
             done
           done
           sha256sum assets/*
-          gh release create "$GITHUB_REF_NAME" assets/* --title "$GITHUB_REF_NAME" \
-            --notes "PJRT CPU plugin libraries of ${GITHUB_REF_NAME#cyxla-pjrt-cpu-v}."
+          gh release create "$TAG" assets/* --target "$GITHUB_SHA" --title "$TAG" \
+            --notes "PJRT CPU plugin libraries of ${TAG#cyxla-pjrt-cpu-v}."
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
