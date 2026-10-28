@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 
 import cyxla as cx
-from cyxla import _cache, _plugins
+from cyxla import _plugins
 from cyxla._cache import (
     decode_lowered,
     distribution_identity,
@@ -180,9 +180,3 @@ def test_statistics_add() -> None:
     first = cx.CompileStatistics(compile_seconds=1.0, compiled=1)
     second = cx.CompileStatistics(load_seconds=0.5, loaded=2)
     assert first.add(second) == cx.CompileStatistics(1.0, 0.5, 1, 2)
-
-
-def test_enable_x64() -> None:
-    """Checks that JAX makes 64-bit arrays after the switch."""
-    _cache.enable_x64()
-    assert jnp.zeros(1).dtype == jnp.float64

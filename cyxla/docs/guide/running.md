@@ -38,7 +38,7 @@ print(program.text.splitlines()[0])
 An argument of a 64-bit type (`float64`, `int64`, `uint64` or `complex128`) makes
 `lower` trace the function in the 64-bit mode of JAX, whatever the setting of the
 process is, and restore the setting afterwards. Otherwise JAX lowers to 32-bit types. A
-function that creates 64-bit values out of 32-bit arguments needs `cx.enable_x64()`
+function that creates 64-bit values out of 32-bit arguments needs `jax.enable_x64`
 first. The `input_types` of the program record the dtype and shape of each argument. The
 function may have unused arguments. They stay in the signature, because callers pass
 every input of a program.

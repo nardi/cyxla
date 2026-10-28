@@ -123,7 +123,6 @@ def test_programs_need_registered_targets_without_jax_targets() -> None:
         import jax, jax.numpy as jnp
         import cyxla as cx
 
-        cx.enable_x64()
         cx.initialize(platform="cpu", jax_targets=False)
         program = cx.lower(jnp.linalg.cholesky, (jax.ShapeDtypeStruct((3, 3), jnp.float64),))
         try:

@@ -70,7 +70,7 @@ def lower(
     `complex128`) is traced in JAX's 64-bit mode, whatever the setting of the process is,
     because JAX would turn the argument into a 32-bit type otherwise. The setting is
     restored afterwards. A function that creates 64-bit values out of 32-bit arguments
-    needs `enable_x64` instead.
+    needs `jax.enable_x64` instead.
     """
     wide = any(is_wide(shape) for shape in shapes)
     try:

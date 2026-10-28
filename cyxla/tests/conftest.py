@@ -31,7 +31,7 @@ def runtime(tmp_path_factory: pytest.TempPathFactory) -> Iterator[cx.RuntimeInfo
     previous = {name: os.environ.pop(name, None) for name in ENVIRONMENT_VARIABLES}
     previous_cache = os.environ.get(cx.CACHE_ENVIRONMENT_VARIABLE)
     os.environ[cx.CACHE_ENVIRONMENT_VARIABLE] = str(tmp_path_factory.mktemp("cache"))
-    cx.enable_x64()
+    jax.config.update("jax_enable_x64", True)
     yield cx.initialize(platform="cpu")
     for name, value in previous.items():
         if value is not None:
