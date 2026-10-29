@@ -24,17 +24,17 @@ release_url = "https://github.com/nardi/cyxla/releases/download/cyxla-pjrt-cpu-v
 [platforms.linux-x86_64]
 library = "libpjrt_cpu.so"
 bazel_options = ["--config=ci_linux_x86_64", "--config=public_cache"]
-sha256 = ""
+sha256 = "6e575772ab1548710fe08d97f0afdb5298340a3bab88606d2d3aaf635039b0ab"
 
 [platforms.linux-aarch64]
 library = "libpjrt_cpu.so"
 bazel_options = ["--config=ci_linux_aarch64", "--config=public_cache"]
-sha256 = ""
+sha256 = "ff52f03007dd585a90930c6ae979bf818aa8088f3506f2577f4485f949a98b25"
 
 [platforms.macos-arm64]
 library = "libpjrt_cpu.dylib"
 bazel_options = ["--macos_minimum_os=11.0", "--config=public_cache"]
-sha256 = ""
+sha256 = "85d39b5955a2a01c8e105d5d6150f6c0c476832022bdf393ea6a0d509b1fc37f"
 
 [platforms.windows-amd64]
 library = "pjrt_cpu.dll"
@@ -71,4 +71,4 @@ bazel_options = [
     "--noexperimental_check_external_repository_files",
     "--config=public_cache",
 ]
-sha256 = ""
+sha256 = "36846f61b2b4f86bf5ba1d21b625e80f43d74ebea096244d6d1c64734c488c3e"
