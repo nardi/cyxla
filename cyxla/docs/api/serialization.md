@@ -18,6 +18,8 @@
 
 ::: cyxla.target_fingerprint
 
+::: cyxla.override_target
+
 ::: cyxla.custom_call_targets
 
 ::: cyxla.LeafInfo

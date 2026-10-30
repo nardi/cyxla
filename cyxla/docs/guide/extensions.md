@@ -6,7 +6,7 @@ from C without the GIL. A solver can then call it from the threads of its callba
 ## The `execute` function
 
 `execute` takes a `ProgramSpec` for the executable and an array of `Input` structs. Each
-input is a host array with a PJRT element type from `cyxla._pjrt`, such as
+input is a host array with a PJRT element type, such as
 `PJRT_Buffer_Type_F32`, and its number of elements. On the CPU the plugin reads the
 arrays in place, so the module fills them and no copy happens. The outputs are read from
 the buffers' memory too, and each destination holds the bytes in
@@ -20,12 +20,13 @@ pair exists because Windows frees aligned memory with a function other than `fre
 the outputs are in `Executable.output_types`, and their sizes are in
 `Executable.output_bytes`.
 
-The declarations live in `cyxla/_runtime.pxd`. The module must not use the runtime from
+The declarations live in `cyxla/__init__.pxd`, which re-exports them from the private
+modules that define them. A module cimports them from `cyxla`. The module must not use the runtime from
 two threads at once, since its state is shared.
 
 ```python
 import cython
-from cython.cimports.cyxla._runtime import ABI_VERSION, Input, ProgramSpec, execute
+from cython.cimports.cyxla import ABI_VERSION, Input, ProgramSpec, execute
 
 import cyxla
 
@@ -59,7 +60,9 @@ builds this way and runs a program.
 
 ## Results and errors
 
-`execute` returns -1 when something fails, and 0 otherwise. The `zero_copy` argument
+`execute` returns -1 when something fails, and 0 otherwise. `raise_last_error(operation)`
+raises the last PJRT error as a Python exception, for a module that checks the result
+while it holds the GIL. The `zero_copy` argument
 asks for the aliased buffers, and it falls back to copies on a plugin that cannot alias
 host memory. An output whose destination is `NULL` is dropped. After a failure,
 `error_info()` returns the number of PJRT errors so far and the last message.

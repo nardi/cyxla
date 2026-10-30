@@ -26,7 +26,7 @@ uv run ty check
 ## Layout
 
 - `src/cyxla/_runtime.py` is the Cython module in pure Python mode. `_runtime.pxd`
-  declares what extension modules cimport, and `_runtime.pyi` types the Python-visible
+  declares the runtime, and `__init__.pxd` re-exports what extension modules cimport, and `_runtime.pyi` types the Python-visible
   part. `_pjrt.pxd` declares the part of the PJRT C API that the runtime uses.
 - `_platform.h` holds every operating system call: loading libraries, aligned memory and
   the clock. The runtime stays portable to Linux, macOS and Windows through it.

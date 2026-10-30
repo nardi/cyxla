@@ -3,6 +3,8 @@
 import platform
 import re
 import sys
+from collections.abc import Generator
+from contextlib import contextmanager
 from typing import NamedTuple
 
 from cyxla import _plugins, _runtime
@@ -39,11 +41,36 @@ class TargetFingerprint(NamedTuple):
         return "|".join(str(field) for field in self)
 
 
+overridden_target: TargetFingerprint | None = None
+"""The fingerprint that `override_target` reports instead of the real one, if any."""
+
+
+@contextmanager
+def override_target(target: TargetFingerprint) -> Generator[None]:
+    """Makes `target_fingerprint` return `target` within the block.
+
+    Saving and loading look for an executable under this fingerprint. A test can use this to
+    load a bundle as if it ran on another machine, which makes `load_program` compile the
+    StableHLO or raise `TargetMismatchError`. Only the fingerprint changes. The plugin
+    keeps running programs on the real machine.
+    """
+    global overridden_target
+    previous = overridden_target
+    overridden_target = target
+    try:
+        yield
+    finally:
+        overridden_target = previous
+
+
 def target_fingerprint() -> TargetFingerprint:
     """Returns the fingerprint of the loaded plugin on this machine.
 
-    It loads the default plugin if none is loaded yet.
+    It loads the default plugin if none is loaded yet. Within `override_target` it returns the
+    overriding fingerprint.
     """
+    if overridden_target is not None:
+        return overridden_target
     _plugins.require_platform(None)
     identity = _plugins.loaded_plugin
     if identity is None:  # pragma: no cover
