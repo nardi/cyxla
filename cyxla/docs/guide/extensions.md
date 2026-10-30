@@ -63,3 +63,12 @@ builds this way and runs a program.
 asks for the aliased buffers, and it falls back to copies on a plugin that cannot alias
 host memory. An output whose destination is `NULL` is dropped. After a failure,
 `error_info()` returns the number of PJRT errors so far and the last message.
+
+## Running without JAX
+
+Importing cyxla does not import JAX. Only `lower` does, when it traces a function. A
+process that loads serialized executables with `Executable.deserialize` and runs them
+therefore starts about half a second faster, and it never pays for JAX if nothing else
+imports it. Pass `jax_targets=False` to `initialize` in such a process unless a program
+calls `jnp.linalg` kernels. The handlers of jaxlib for them are registered by default,
+and that registration takes longer than the rest of the initialization.
