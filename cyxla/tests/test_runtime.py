@@ -74,7 +74,7 @@ def test_first_use_loads_the_default_plugin() -> None:
     [
         "cx.runtime_info()",
         "cx.Executable.compile(b'', b'')",
-        "cx.Executable.deserialize(b'')",
+        "cx.Executable.deserialize(b'not an executable')",
         "cx.register_jax_targets()",
     ],
 )

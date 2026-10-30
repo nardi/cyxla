@@ -17,7 +17,7 @@ cdef enum:
     # The version of the declarations below that other extension modules compile against.
     # It changes whenever a struct or a function signature changes, so `cyxla.check_abi`
     # can reject a module compiled against other declarations.
-    ABI_VERSION = 3
+    ABI_VERSION = 4
     ALIGNMENT = 64
     MAX_INPUTS = 8
     MAX_OUTPUTS = 4
@@ -72,6 +72,8 @@ cdef class Executable:
     cdef readonly int num_outputs
     cdef readonly tuple output_types
     cdef public object input_types
+    cdef public object program
+    cdef object serialized_bytes
 
     @staticmethod
     cdef Executable wrap(PJRT_LoadedExecutable* handle)
