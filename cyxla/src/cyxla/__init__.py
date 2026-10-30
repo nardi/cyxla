@@ -2,7 +2,7 @@
 
 cyxla lowers JAX functions to StableHLO, compiles them with a PJRT plugin, and runs them from
 extension modules of other packages without the GIL. Those modules `cimport` the
-declarations in `cyxla/_runtime.pxd`, and `get_include` returns the directories that their
+declarations in `cyxla/__init__.pxd`, and `get_include` returns the directories that their
 build needs.
 """
 
@@ -49,9 +49,15 @@ from cyxla._runtime import (
     abi_version,
     error_info,
     is_initialized,
+    raise_last_error,
     runtime_info,
 )
-from cyxla._targets import TargetFingerprint, custom_call_targets, target_fingerprint
+from cyxla._targets import (
+    TargetFingerprint,
+    custom_call_targets,
+    override_target,
+    target_fingerprint,
+)
 from cyxla._trees import (
     LeafInfo,
     check_fingerprint,
@@ -72,8 +78,8 @@ ABI_VERSION = abi_version()
 def check_abi(compiled_version: int) -> None:
     """Raises an `ImportError` unless a module was compiled against these declarations.
 
-    An extension module passes the `ABI_VERSION` that it cimported from `cyxla._runtime`
-    when it is imported. Cython checks the signatures of shared functions itself, but not
+    An extension module passes the `ABI_VERSION` that it cimported from `cyxla` when it is
+    imported. Cython checks the signatures of shared functions itself, but not
     the layout of structs such as `ProgramSpec`.
     """
     if compiled_version != ABI_VERSION:
@@ -87,7 +93,7 @@ def get_include() -> list[str]:
     """Returns the directories that an extension module needs to build against cyxla.
 
     The first holds the PJRT C API header, for the C compiler. The second is the parent of
-    the package, in which Cython finds `cyxla/_runtime.pxd`.
+    the package, in which Cython finds `cyxla/__init__.pxd`.
     """
     package = Path(__file__).parent
     return [str(package / "include"), str(package.parent)]
@@ -139,9 +145,11 @@ __all__ = [
     "pack_program",
     "register_ffi_target",
     "record_custom_calls",
+    "raise_last_error",
     "register_jax_targets",
     "runtime_info",
     "store_lowered",
+    "override_target",
     "target_fingerprint",
     "tree_fingerprint",
 ]

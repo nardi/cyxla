@@ -17,6 +17,29 @@ def test_fingerprint_describes_the_plugin_and_machine() -> None:
     assert fingerprint == cx.target_fingerprint()
 
 
+def test_override_replaces_the_fingerprint_within_the_block() -> None:
+    """Checks that the override applies inside the block and is undone after it."""
+    real = cx.target_fingerprint()
+    other = real._replace(machine="other")
+    with cx.override_target(other):
+        assert cx.target_fingerprint() == other
+        with cx.override_target(real._replace(system="inner")):
+            assert cx.target_fingerprint().system == "inner"
+        assert cx.target_fingerprint() == other
+    assert cx.target_fingerprint() == real
+
+
+def test_override_is_undone_after_an_error() -> None:
+    """Checks that an exception in the block does not leave the override in place."""
+    real = cx.target_fingerprint()
+    try:
+        with cx.override_target(real._replace(machine="other")):
+            raise RuntimeError("Stop.")
+    except RuntimeError:
+        pass
+    assert cx.target_fingerprint() == real
+
+
 def test_fingerprint_names_a_plugin_without_a_distribution(monkeypatch) -> None:  # noqa: ANN001
     """Checks that the file name stands in when the plugin has no version."""
     from cyxla import _plugins

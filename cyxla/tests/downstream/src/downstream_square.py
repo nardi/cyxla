@@ -1,12 +1,12 @@
 """Runs a cyxla program of one `float32` input and one output without the GIL."""
 
 import cython
-from cython.cimports.cyxla._pjrt import PJRT_Buffer_Type_F32
-from cython.cimports.cyxla._runtime import (
+from cython.cimports.cyxla import (
     ABI_VERSION,
     MAX_OUTPUTS,
     Executable,
     Input,
+    PJRT_Buffer_Type_F32,
     ProgramSpec,
     alias_buffer,
     aligned_memory,
