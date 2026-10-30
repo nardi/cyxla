@@ -1,13 +1,15 @@
 """Lowering of JAX functions to StableHLO bytecode that a PJRT plugin compiles."""
 
 from collections.abc import Callable, Sequence
-from typing import Any, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
 
-import jax
 import numpy as np
 
 from cyxla import _plugins, _runtime
 from cyxla._types import ArrayType
+
+if TYPE_CHECKING:
+    import jax
 
 LOWERING_PLATFORMS = frozenset({"cpu", "cuda", "rocm", "tpu"})
 """Platforms that `jax.export` lowers for, which are also the names the plugins report."""
@@ -72,6 +74,8 @@ def default_device_platform() -> str | None:
     This is what `jax.default_device` sets, to a device or to a platform name. Without it
     JAX picks a backend itself, which cyxla does not start.
     """
+    import jax
+
     device = getattr(jax.config, "jax_default_device")
     if device is None:
         return None
@@ -80,6 +84,8 @@ def default_device_platform() -> str | None:
 
 def configured_platform() -> str | None:
     """Returns the first platform of `jax_platforms` that has an installed plugin."""
+    import jax
+
     configured = getattr(jax.config, "jax_platforms") or ""
     for name in filter(None, (part.strip() for part in configured.split(","))):
         candidate = jax_platform_name(name)
@@ -120,7 +126,7 @@ def lowering_platform(platform: str | None, shapes: Sequence[Any] = ()) -> str:
 
 def lower(
     function: Callable[..., Any],
-    shapes: Sequence[jax.ShapeDtypeStruct | jax.Array],
+    shapes: "Sequence[jax.ShapeDtypeStruct | jax.Array]",
     platform: str | None = None,
     custom_calls: Sequence[str] = (),
 ) -> LoweredProgram:
@@ -140,6 +146,8 @@ def lower(
     The function is traced with the current setting of `jax.enable_x64`, so 64-bit
     arguments and values need that setting on, as they do in JAX.
     """
+    import jax
+
     target = lowering_platform(platform, shapes)
     try:
         exported = jax.export.export(
@@ -173,6 +181,8 @@ def array_type(aval: Any, subject: str = "An argument") -> ArrayType:
 
     The abstract value is typed `Any` because `jax.export` exposes it as an internal class.
     """
+    import jax
+
     try:
         dtype = np.dtype(aval.dtype)
         shape = tuple(int(dimension) for dimension in aval.shape)
