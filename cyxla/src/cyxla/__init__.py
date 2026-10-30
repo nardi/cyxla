@@ -9,6 +9,7 @@ build needs.
 import importlib.metadata
 from pathlib import Path
 
+from cyxla._bundle import Bundle, BundleError, BundleWriter
 from cyxla._cache import (
     CACHE_ENVIRONMENT_VARIABLE,
     CompileStatistics,
@@ -20,6 +21,7 @@ from cyxla._cache import (
     load_lowered,
     store_lowered,
 )
+from cyxla._codec import decode_record, encode_record
 from cyxla._ffi import (
     MIRROR_ENVIRONMENT_VARIABLE,
     mirror_by_default,
@@ -36,12 +38,26 @@ from cyxla._plugins import (
     find_plugin,
     initialize,
 )
+from cyxla._records import (
+    TargetMismatchError,
+    load_program,
+    pack_program,
+    record_custom_calls,
+)
 from cyxla._runtime import (
     Executable,
     abi_version,
     error_info,
     is_initialized,
     runtime_info,
+)
+from cyxla._targets import TargetFingerprint, custom_call_targets, target_fingerprint
+from cyxla._trees import (
+    LeafInfo,
+    check_fingerprint,
+    decode_fingerprint,
+    encode_fingerprint,
+    tree_fingerprint,
 )
 from cyxla._types import ArrayType, ErrorInfo, OptionValue, Plugin, RuntimeInfo
 
@@ -84,20 +100,32 @@ __all__ = [
     "PLATFORM_ENVIRONMENT_VARIABLE",
     "PLUGIN_ENVIRONMENT_VARIABLE",
     "ArrayType",
+    "Bundle",
+    "BundleError",
+    "BundleWriter",
     "CompileStatistics",
     "ErrorInfo",
     "Executable",
+    "LeafInfo",
     "LoweredProgram",
     "OptionValue",
     "Plugin",
     "PluginModule",
     "RuntimeInfo",
+    "TargetFingerprint",
+    "TargetMismatchError",
     "available_plugins",
     "cache_directory",
     "cache_key",
     "check_abi",
+    "check_fingerprint",
     "compile_options",
     "compile_program",
+    "custom_call_targets",
+    "decode_fingerprint",
+    "decode_record",
+    "encode_fingerprint",
+    "encode_record",
     "error_info",
     "find_plugin",
     "get_include",
@@ -105,10 +133,15 @@ __all__ = [
     "is_initialized",
     "library_identity",
     "load_lowered",
+    "load_program",
     "lower",
     "mirror_jax_registrations",
+    "pack_program",
     "register_ffi_target",
+    "record_custom_calls",
     "register_jax_targets",
     "runtime_info",
     "store_lowered",
+    "target_fingerprint",
+    "tree_fingerprint",
 ]
