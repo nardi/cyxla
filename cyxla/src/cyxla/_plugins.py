@@ -113,6 +113,10 @@ class PluginIdentity(NamedTuple):
     path: Path
     size: int
     modified_ns: int
+    source: str = ""
+    """Where the plugin was found, such as the distribution that installed it."""
+    version: str = ""
+    """The version of that distribution, or empty if the plugin is not from one."""
 
 
 loaded_plugin: PluginIdentity | None = None
@@ -279,6 +283,14 @@ def initialize(
         return load_plugin(plugin, platform, options, jax_targets)
 
 
+def distribution_version(name: str) -> str:
+    """Returns the version of an installed distribution, or an empty string if there is none."""
+    try:
+        return importlib.metadata.version(name)
+    except importlib.metadata.PackageNotFoundError:
+        return ""
+
+
 def require_platform(platform: str | None) -> None:
     """Loads the plugin for a platform unless one is loaded, and checks that it runs it.
 
@@ -321,6 +333,11 @@ def load_plugin(
         _ffi.register_jax_targets()
     status = path.stat()
     loaded_plugin = PluginIdentity(
-        info.platform, path, status.st_size, status.st_mtime_ns
+        info.platform,
+        path,
+        status.st_size,
+        status.st_mtime_ns,
+        chosen.source,
+        distribution_version(chosen.source),
     )
     return info

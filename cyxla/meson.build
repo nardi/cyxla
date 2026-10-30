@@ -1,7 +1,7 @@
 project(
   'cyxla',
   'c',
-  version: '0.1.0',
+  version: '0.1.1',
   meson_version: '>=1.8',
   default_options: ['c_std=c11', 'buildtype=release', 'b_ndebug=if-release'],
 )

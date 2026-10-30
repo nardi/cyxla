@@ -259,6 +259,7 @@ def compile_program(
             path.unlink(missing_ok=True)
         else:
             executable.input_types = program.input_types
+            executable.program = program
             return executable, CompileStatistics(
                 load_seconds=time.perf_counter() - start, loaded=1
             )
@@ -273,6 +274,7 @@ def compile_program(
             "`jax.ffi.register_ffi_target`."
         ) from error
     executable.input_types = program.input_types
+    executable.program = program
     statistics = CompileStatistics(
         compile_seconds=time.perf_counter() - start, compiled=1
     )

@@ -1,6 +1,6 @@
 [project]
 name = "cyxla"
-version = "0.1.0"
+version = "0.1.1"
 description = "A bridge from JAX to native code through the PJRT C API"
 readme = "README.md"
 authors = [{ name = "Nardi Lam", email = "mail@nardilam.nl" }]

@@ -715,6 +715,9 @@ class Executable:
         input_types: The `ArrayType` of each argument, or `None` when it is not known.
             `compile_program` sets it from the lowered program, and `run` then converts
             its arguments to these types.
+        program: The `LoweredProgram` that the executable was compiled from, or `None`
+            when it is not known. `compile_program` and `load_program` set it, and
+            `pack_program` stores its StableHLO next to the serialized executable.
     """
 
     def __dealloc__(self) -> None:
@@ -761,24 +764,37 @@ class Executable:
         return Executable.wrap(arguments.executable)
 
     @staticmethod
-    def deserialize(serialized: bytes) -> Executable:
-        """Loads an executable that `serialize` wrote with the same plugin."""
+    def deserialize(serialized: object) -> Executable:
+        """Loads an executable that `serialize` wrote with the same plugin.
+
+        `serialized` is any object with the buffer protocol, such as `bytes` or a slice of a
+        `memoryview`, so executables can be read from a file without copying them. The GIL is
+        released while the plugin loads the executable, which lets several threads load
+        different executables at once.
+        """
         ensure_initialized()
-        data: cython.p_char
-        size: cython.Py_ssize_t
-        PyBytes_AsStringAndSize(serialized, cython.address(data), cython.address(size))
+        view: cython.const[cython.uchar][::1] = serialized
+        if view.shape[0] == 0:
+            raise ValueError("The serialized executable is empty.")
         arguments: PJRT_Executable_DeserializeAndLoad_Args
         memset(cython.address(arguments), 0, cython.sizeof(arguments))
         arguments.struct_size = PJRT_Executable_DeserializeAndLoad_Args_STRUCT_SIZE
         arguments.client = client
-        arguments.serialized_executable = data
-        arguments.serialized_executable_size = size
-        if (
-            check(api.PJRT_Executable_DeserializeAndLoad(cython.address(arguments)))
-            != 0
-        ):
+        arguments.serialized_executable = cython.cast(
+            cython.p_char, cython.address(view[0])
+        )
+        arguments.serialized_executable_size = view.shape[0]
+        error: cython.pointer[PJRT_Error]
+        with cython.nogil:
+            error = api.PJRT_Executable_DeserializeAndLoad(cython.address(arguments))
+        # The error buffer is shared, so the message is read while the GIL is held again.
+        if check(error) != 0:
             raise_last_error("PJRT_Executable_DeserializeAndLoad")
-        return Executable.wrap(arguments.loaded_executable)
+        loaded: Executable = Executable.wrap(arguments.loaded_executable)
+        # The plugin cannot serialize an executable that it loaded from bytes, so these are
+        # kept and `serialize` returns them.
+        loaded.serialized_bytes = serialized
+        return loaded
 
     @staticmethod
     @cython.cfunc
@@ -794,6 +810,8 @@ class Executable:
         check(api.PJRT_Executable_NumOutputs(cython.address(outputs)))
         executable.num_outputs = outputs.num_outputs
         executable.input_types = None
+        executable.program = None
+        executable.serialized_bytes = None
         try:
             executable.output_types = output_types(unloaded, outputs.num_outputs)
         finally:
@@ -875,8 +893,25 @@ class Executable:
             raise_last_error("PJRT_LoadedExecutable_Execute")
         return results
 
+    def warm_up(self) -> None:
+        """Executes the program once on zeros, so that the first real call is not slower.
+
+        A freshly loaded executable does some of its work lazily, such as paging in its code.
+        The arguments come from `input_types`, so it needs an executable from
+        `compile_program` or `load_program`.
+        """
+        expected = self.input_types
+        if expected is None:
+            raise ValueError("The types of the arguments are not known.")
+        self.run([np.zeros(item.shape, item.dtype) for item in expected])
+
     def serialize(self) -> bytes:
-        """Returns the executable in the plugin's serialized form."""
+        """Returns the executable in the plugin's serialized form.
+
+        An executable from `deserialize` returns the bytes that it was loaded from.
+        """
+        if self.serialized_bytes is not None:
+            return bytes(self.serialized_bytes)
         unloaded: cython.pointer[PJRT_Executable] = get_executable(self.handle)
         arguments: PJRT_Executable_Serialize_Args
         memset(cython.address(arguments), 0, cython.sizeof(arguments))
