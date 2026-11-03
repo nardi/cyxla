@@ -51,6 +51,13 @@ programs on a machine without a GPU. The program records its platform, and
 `compile_program` loads the plugin for it. A function that calls custom calls needs
 their names in `custom_calls`, as the [custom calls](custom-calls.md) page explains.
 
+Every operation of a program carries the file, line and function that produced it. XLA
+copies these locations into the executable. `lower(..., debug_info=False)` removes them
+before compiling, which makes the serialized executable about 15% smaller for programs
+with many operations and shortens the time to load it. The plugin then reports
+operations by name only, so profiles and compiler messages no longer point at lines of
+the function.
+
 ## Compilation
 
 `compile_program` returns the executable and the

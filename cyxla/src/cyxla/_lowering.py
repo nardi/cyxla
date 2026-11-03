@@ -189,11 +189,38 @@ def host_callback_message(sites: Sequence[CallbackSite]) -> str:
     return "\n".join(lines)
 
 
+def without_debug_info(code: bytes) -> tuple[bytes, str]:
+    """Returns StableHLO bytecode and its text after removing the source locations.
+
+    The locations name the file, line and function of every operation. XLA copies them into
+    the executable, where they take a sizable part of the bytes and of the time to load it.
+    The bytecode is read and written again at the oldest version that JAX itself writes for.
+    The dialect of the sharding annotations stays in it, so the writer allows other
+    dialects. The context comes from a private function of JAX, because it registers the
+    dialects that the bytecode of an export uses.
+    """
+    from jax._src.interpreters import mlir
+    from jaxlib.mlir import ir
+    from jaxlib.mlir.dialects import stablehlo
+
+    version = stablehlo.get_version_from_compatibility_requirement(
+        stablehlo.StablehloCompatibilityRequirement.WEEK_4
+    )
+    with mlir.make_ir_context() as context:
+        module = stablehlo.deserialize_portable_artifact(context, code)
+        text = str(module.operation.get_asm(enable_debug_info=False))
+        stripped = ir.Module.parse(text)
+        return bytes(
+            stablehlo.serialize_portable_artifact(stripped, version, True)
+        ), text
+
+
 def lower(
     function: Callable[..., Any],
     shapes: "Sequence[jax.ShapeDtypeStruct | jax.Array]",
     platform: str | None = None,
     custom_calls: Sequence[str] | Literal["detect"] = (),
+    debug_info: bool = True,
 ) -> LoweredProgram:
     """Lowers a function to StableHLO for a platform, which by default follows JAX.
 
@@ -213,6 +240,10 @@ def lower(
 
     A function that calls back into Python, such as one with `jax.debug.callback`, cannot be
     exported. Lowering it raises a `HostCallbackError` that lists the callbacks.
+
+    With `debug_info=False` the program loses the source locations of its operations. Its
+    executable is smaller and loads faster, and profiles and error messages of the plugin no
+    longer point at lines of the function.
 
     The function is traced with the current setting of `jax.enable_x64`, so 64-bit
     arguments and values need that setting on, as they do in JAX.
@@ -255,11 +286,11 @@ def lower(
     input_types = tuple(array_type(aval) for aval in exported.in_avals)
     for index, aval in enumerate(exported.out_avals):
         array_type(aval, f"The result {index}")
+    code, module_text = bytes(exported.mlir_module_serialized), exported.mlir_module()
+    if not debug_info:
+        code, module_text = without_debug_info(code)
     return LoweredProgram(
-        code=bytes(exported.mlir_module_serialized),
-        text=exported.mlir_module(),
-        input_types=input_types,
-        platform=target,
+        code=code, text=module_text, input_types=input_types, platform=target
     )
 
 

@@ -311,3 +311,39 @@ def test_other_not_implemented_errors_pass_through(
     with pytest.raises(NotImplementedError, match="something else") as caught:
         cx.lower(lambda x: x, SHAPES)
     assert not isinstance(caught.value, cx.HostCallbackError)
+
+
+def newton_program(debug_info: bool) -> cx.LoweredProgram:
+    """Lowers the Hessian of a function with an unrolled loop and a linear solve."""
+
+    def solve(x: jax.Array) -> jax.Array:
+        matrix = jnp.eye(8) * 3.0 + jnp.ones((8, 8)) * 0.1
+
+        def step(_: int, y: jax.Array) -> jax.Array:
+            residual = matrix @ y + jnp.sin(y) - x
+            return y - jnp.linalg.solve(matrix + jnp.diag(jnp.cos(y)), residual)
+
+        return jnp.sum(jax.lax.fori_loop(0, 30, step, jnp.zeros(8)) ** 2)
+
+    return cx.lower(
+        jax.jacfwd(jax.grad(solve)),
+        (jax.ShapeDtypeStruct((8,), jnp.float64),),
+        custom_calls="detect",
+        debug_info=debug_info,
+    )
+
+
+def test_program_without_debug_info_is_smaller_and_gives_the_same_result() -> None:
+    """Checks that dropping the locations shrinks the executable and keeps the values."""
+    full = newton_program(True)
+    bare = newton_program(False)
+    assert "loc(" in full.text
+    assert "loc(" not in bare.text
+    assert full.text != bare.text
+    first, _ = cx.compile_program(full, disk_cache=False)
+    second, _ = cx.compile_program(bare, disk_cache=False)
+    assert len(second.serialize()) < 0.95 * len(first.serialize())
+    point = np.linspace(0.1, 0.8, 8)
+    (expected,) = first.run([point])
+    (actual,) = second.run([point])
+    np.testing.assert_allclose(actual, expected)
