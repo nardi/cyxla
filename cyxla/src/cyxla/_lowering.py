@@ -1,11 +1,12 @@
 """Lowering of JAX functions to StableHLO bytecode that a PJRT plugin compiles."""
 
-from collections.abc import Callable, Sequence
-from typing import TYPE_CHECKING, Any, NamedTuple
+import sys
+from collections.abc import Callable, Iterator, Sequence
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
 import numpy as np
 
-from cyxla import _plugins, _runtime
+from cyxla import _plugins, _runtime, _targets
 from cyxla._types import ArrayType
 
 if TYPE_CHECKING:
@@ -13,6 +14,22 @@ if TYPE_CHECKING:
 
 LOWERING_PLATFORMS = frozenset({"cpu", "cuda", "rocm", "tpu"})
 """Platforms that `jax.export` lowers for, which are also the names the plugins report."""
+
+DETECT = "detect"
+"""The value of `custom_calls` that allows every custom call the function makes."""
+
+
+class HostCallbackError(NotImplementedError):
+    """A function calls back into Python, which a lowered program cannot do."""
+
+
+class CallbackSite(NamedTuple):
+    """A place in a function that calls back into Python."""
+
+    primitive: str
+    """The name of the JAX primitive, such as `debug_callback` or `io_callback`."""
+    location: str
+    """The file, line and function of the user code that made the call."""
 
 
 class LoweredProgram(NamedTuple):
@@ -124,11 +141,62 @@ def lowering_platform(platform: str | None, shapes: Sequence[Any] = ()) -> str:
     return name
 
 
+def nested_jaxprs(value: Any) -> Iterator[Any]:
+    """Yields the jaxprs inside the parameter of an equation, at any depth of tuples.
+
+    The value is typed `Any` because a parameter can hold any object. The jaxprs of `cond`,
+    `scan`, `while` and the custom derivative rules are all closed jaxprs or jaxprs.
+    """
+    from jax.extend import core
+
+    match value:
+        case core.ClosedJaxpr() | core.Jaxpr():
+            yield value
+        case tuple() | list():
+            for item in value:
+                yield from nested_jaxprs(item)
+
+
+def callback_sites(jaxpr: Any) -> tuple[CallbackSite, ...]:
+    """Returns the equations of a jaxpr, with those of nested jaxprs, that call into Python.
+
+    The jaxpr is typed `Any` because it is a closed jaxpr or a jaxpr. A primitive counts as
+    a callback when its name ends in `callback`, which covers `debug_callback`,
+    `pure_callback` and `io_callback`.
+    """
+    from jax.extend import source_info_util
+
+    inner = getattr(jaxpr, "jaxpr", jaxpr)
+    found: list[CallbackSite] = []
+    for equation in inner.eqns:
+        name = equation.primitive.name
+        if name.endswith("callback"):
+            location = source_info_util.summarize(equation.source_info)
+            found.append(CallbackSite(name, location))
+        for value in equation.params.values():
+            for nested in nested_jaxprs(value):
+                found.extend(callback_sites(nested))
+    return tuple(found)
+
+
+def host_callback_message(sites: Sequence[CallbackSite]) -> str:
+    """Returns the error message for a function that calls back into Python."""
+    lines = ["The function calls back into Python, which a lowered program cannot do."]
+    lines.extend(f"  {site.primitive} at {site.location}" for site in sites)
+    lines.append("Remove the callbacks from the function.")
+    if "equinox" in sys.modules:
+        lines.append(
+            "A callback from `equinox.error_if` goes away when the environment variable "
+            "`EQX_ON_ERROR` is `nan` before Equinox is imported."
+        )
+    return "\n".join(lines)
+
+
 def lower(
     function: Callable[..., Any],
     shapes: "Sequence[jax.ShapeDtypeStruct | jax.Array]",
     platform: str | None = None,
-    custom_calls: Sequence[str] = (),
+    custom_calls: Sequence[str] | Literal["detect"] = (),
 ) -> LoweredProgram:
     """Lowers a function to StableHLO for a platform, which by default follows JAX.
 
@@ -141,7 +209,13 @@ def lower(
     JAX traces. Unused arguments stay in the signature, since callers pass every input of a
     program. `jax.export` refuses custom calls that it knows no compatibility guarantees
     for, such as the targets of third-party libraries, so `custom_calls` names the targets
-    that the function may call. The kernels of `jnp.linalg` need no entry.
+    that the function may call. The kernels of `jnp.linalg` need no entry. With
+    `custom_calls="detect"` the function is lowered once more to find its targets, and all
+    of them are allowed. This also covers the targets of derivative rules, which only appear
+    after differentiation.
+
+    A function that calls back into Python, such as one with `jax.debug.callback`, cannot be
+    exported. Lowering it raises a `HostCallbackError` that lists the callbacks.
 
     The function is traced with the current setting of `jax.enable_x64`, so 64-bit
     arguments and values need that setting on, as they do in JAX.
@@ -149,21 +223,37 @@ def lower(
     import jax
 
     target = lowering_platform(platform, shapes)
+    jitted = jax.jit(function, keep_unused=True)
+    match custom_calls:
+        case "detect":
+            lowered = jitted.trace(*shapes).lower(lowering_platforms=(target,))
+            allowed = _targets.custom_call_targets(lowered.as_text())
+        case str():
+            raise TypeError(
+                'The `custom_calls` argument is "detect" or a sequence of target names, '
+                f"not the single name {custom_calls!r}."
+            )
+        case _:
+            allowed = tuple(custom_calls)
     try:
         exported = jax.export.export(
-            jax.jit(function, keep_unused=True),
+            jitted,
             platforms=[target],
             disabled_checks=[
-                jax.export.DisabledSafetyCheck.custom_call(name)
-                for name in custom_calls
+                jax.export.DisabledSafetyCheck.custom_call(name) for name in allowed
             ],
         )(*shapes)
+    except NotImplementedError as error:
+        if "host_callbacks" not in str(error):
+            raise
+        sites = callback_sites(jitted.trace(*shapes).jaxpr)
+        raise HostCallbackError(host_callback_message(sites)) from error
     except ValueError as error:
         if "no compatibility guarantees" not in str(error):
             raise
         raise ValueError(
             f"{error}\nName the custom calls that the function may run in the "
-            "`custom_calls` argument of `cyxla.lower`."
+            '`custom_calls` argument of `cyxla.lower`, or pass `custom_calls="detect"`.'
         ) from error
     input_types = tuple(array_type(aval) for aval in exported.in_avals)
     for index, aval in enumerate(exported.out_avals):

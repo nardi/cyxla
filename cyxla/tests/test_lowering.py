@@ -1,5 +1,7 @@
 """Tests of lowering for the loaded platform and for others."""
 
+import sys
+import types
 from pathlib import Path
 from types import SimpleNamespace
 from typing import NamedTuple
@@ -13,7 +15,10 @@ from conftest import run_python
 import cyxla as cx
 from cyxla import _plugins
 from cyxla._lowering import (
+    CallbackSite,
     array_type,
+    callback_sites,
+    host_callback_message,
     jax_platform_name,
     lowering_platform,
     placement_platform,
@@ -216,3 +221,93 @@ def test_programs_choose_their_plugin() -> None:
         """
     )
     assert result.returncode == 0, result.stderr
+
+
+def two_targets(x: jax.Array) -> jax.Array:
+    """Calls two unregistered FFI targets, which lowering does not need handlers for."""
+    spec = jax.ShapeDtypeStruct(x.shape, x.dtype)
+    return jax.ffi.ffi_call("detect_second", spec)(
+        jax.ffi.ffi_call("detect_first", spec)(x)
+    )
+
+
+def test_detect_allows_every_custom_call() -> None:
+    """Checks that `detect` finds the targets of the function and allows all of them."""
+    program = cx.lower(two_targets, SHAPES, custom_calls="detect")
+    assert cx.custom_call_targets(program.text) == ("detect_first", "detect_second")
+
+
+def test_custom_calls_rejects_a_single_name() -> None:
+    """Checks that a bare string other than `detect` is not read as a sequence of letters."""
+    with pytest.raises(TypeError, match="not the single name 'detect_first'"):
+        cx.lower(two_targets, SHAPES, custom_calls="detect_first")
+
+
+def test_named_custom_calls_are_still_checked() -> None:
+    """Checks that a partial list leaves the other target unallowed, with a hint for `detect`."""
+    with pytest.raises(ValueError, match='custom_calls="detect"'):
+        cx.lower(two_targets, SHAPES, custom_calls=["detect_first"])
+
+
+def with_callbacks(x: jax.Array) -> jax.Array:
+    """Calls back into Python at the top level and inside a branch."""
+    jax.debug.callback(lambda value: None, x)
+    return jax.lax.cond(
+        x[0] > 0,
+        lambda y: jax.pure_callback(
+            lambda v: v, jax.ShapeDtypeStruct(y.shape, y.dtype), y
+        ),
+        lambda y: y,
+        x,
+    )
+
+
+def test_host_callbacks_are_listed_with_their_locations() -> None:
+    """Checks that the error names each primitive, also in nested jaxprs, and where it is."""
+    with pytest.raises(cx.HostCallbackError) as caught:
+        cx.lower(with_callbacks, SHAPES)
+    message = str(caught.value)
+    assert "debug_callback at" in message
+    assert "pure_callback at" in message
+    assert "test_lowering.py" in message
+    assert isinstance(caught.value, NotImplementedError)
+
+
+def test_host_callback_message_mentions_equinox_only_when_imported(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Checks the hint about `EQX_ON_ERROR`, which only helps when Equinox is in use."""
+    sites = [CallbackSite("io_callback", "somewhere.py:1 (function)")]
+    monkeypatch.delitem(sys.modules, "equinox", raising=False)
+    assert "EQX_ON_ERROR" not in host_callback_message(sites)
+    monkeypatch.setitem(sys.modules, "equinox", types.ModuleType("equinox"))
+    assert "EQX_ON_ERROR" in host_callback_message(sites)
+
+
+def test_callback_sites_of_a_function_without_callbacks() -> None:
+    """Checks that a plain function has no sites."""
+    traced = jax.jit(lambda x: jnp.sin(x)).trace(*SHAPES)
+    assert callback_sites(traced.jaxpr) == ()
+
+
+def test_unlisted_host_callback_error_still_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Checks that the error does not depend on finding the sites."""
+    monkeypatch.setattr("cyxla._lowering.callback_sites", lambda jaxpr: ())
+    with pytest.raises(cx.HostCallbackError, match="calls back into Python"):
+        cx.lower(with_callbacks, SHAPES)
+
+
+def test_other_not_implemented_errors_pass_through(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Checks that only the error about host callbacks is replaced."""
+
+    def refuse(*arguments: object, **options: object) -> object:
+        raise NotImplementedError("something else is missing")
+
+    monkeypatch.setattr(jax.export, "export", refuse)
+    with pytest.raises(NotImplementedError, match="something else") as caught:
+        cx.lower(lambda x: x, SHAPES)
+    assert not isinstance(caught.value, cx.HostCallbackError)
