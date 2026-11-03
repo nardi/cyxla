@@ -7,14 +7,18 @@ python.install_sources(
   '_codec.py',
   '_ffi.py',
   '_lowering.py',
+  '_native_functions.py',
   '_plugins.py',
   '_records.py',
   '_targets.py',
   '_trees.py',
   '_types.py',
   '_pjrt.pxd',
+  '_ffi_api.pxd',
+  '_native.pxd',
   '_runtime.pxd',
   '_runtime.pyi',
+  '_native.pyi',
   'py.typed',
   subdir: 'cyxla',
 )
@@ -72,6 +76,43 @@ python.extension_module(
   dependencies: [pjrt, dl, python.dependency()],
   # `_platform.h` sits next to the sources and is not installed, as only this module needs it.
   include_directories: include_directories('.'),
+  c_args: c_args,
+  install: true,
+  subdir: 'cyxla',
+)
+
+# The handler for native functions. Its structures come from the vendored FFI header, which
+# the `pjrt` dependency already puts on the include path next to the `cyxla/native.h` header.
+native_c = custom_target(
+  '_native.c',
+  input: '_native.py',
+  output: '_native.c',
+  depend_files: files('_ffi_api.pxd', '_native.pxd'),
+  command: [
+    cython, cython_args,
+    '-w', meson.project_source_root(),
+    '-I', 'src',
+    '--module-name', 'cyxla._native',
+    meson.current_source_dir() / '_native.py',
+    '-o', meson.current_build_dir() / '_native.c',
+  ],
+)
+if get_option('coverage')
+  custom_target(
+    '_native.c.copy',
+    input: native_c,
+    output: '_native.c.stamp',
+    command: [
+      python, '-c', 'import shutil, sys; shutil.copyfile(sys.argv[1], sys.argv[2]); open(sys.argv[3], "w").close()',
+      '@INPUT@', meson.current_source_dir() / '_native.c', '@OUTPUT@',
+    ],
+    build_by_default: true,
+  )
+endif
+python.extension_module(
+  '_native',
+  native_c,
+  dependencies: [pjrt, python.dependency()],
   c_args: c_args,
   install: true,
   subdir: 'cyxla',

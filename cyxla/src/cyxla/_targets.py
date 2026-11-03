@@ -9,6 +9,9 @@ from typing import NamedTuple
 
 from cyxla import _plugins, _runtime
 
+NATIVE_TARGET = "cyxla_native_function"
+"""The custom call target of the handler for native functions, which cyxla always allows."""
+
 CUSTOM_CALL_PATTERN = re.compile(r"custom_call\s+@([\w.$-]+)")
 """A custom call in the text of a StableHLO module, with the name of its target."""
 

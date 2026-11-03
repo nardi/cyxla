@@ -34,6 +34,35 @@ for zero_copy in (True, False):
 """Imports the built module, whose directory is the first argument, and runs a program with it."""
 
 
+DOWNSTREAM_NATIVE_TEST = """
+import sys
+
+import jax
+import jax.numpy as jnp
+import numpy as np
+import cyxla as cx
+
+jax.config.update("jax_enable_x64", True)
+sys.path.insert(0, sys.argv[1])
+import downstream_native
+
+info = {item.name: item for item in cx.registered_native_functions()}
+assert info["downstream.scale"].provider == "__main__" or info["downstream.scale"].provider is None, info
+
+def function(x):
+    return cx.native_call(
+        "downstream.scale", jax.ShapeDtypeStruct(x.shape, x.dtype), x, factor=2.5
+    )
+
+program = cx.lower(function, (jax.ShapeDtypeStruct((3,), jnp.float64),))
+executable, _ = cx.compile_program(program, disk_cache=False)
+(result,) = executable.run([np.array([1.0, 2.0, 3.0])])
+assert result.tolist() == [2.5, 5.0, 7.5], result
+assert np.asarray(jax.jit(function)(np.array([1.0, 2.0, 3.0]))).tolist() == [2.5, 5.0, 7.5]
+"""
+"""Imports the Cython module that registers a native function, and calls it from a program."""
+
+
 def test_get_include() -> None:
     """Checks that the include directories hold the header and the declarations."""
     header, declarations = map(Path, cx.get_include())
@@ -74,6 +103,7 @@ def test_downstream_module_runs_programs(tmp_path: Path) -> None:
         ],
         [meson, "compile", "-C", str(tmp_path)],
         [sys.executable, "-c", textwrap.dedent(DOWNSTREAM_TEST), str(tmp_path)],
+        [sys.executable, "-c", textwrap.dedent(DOWNSTREAM_NATIVE_TEST), str(tmp_path)],
     ):
         result = subprocess.run(
             command, capture_output=True, text=True, env=environment, check=False

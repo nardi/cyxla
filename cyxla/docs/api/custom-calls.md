@@ -12,3 +12,15 @@ guide](../guide/custom-calls.md) explains when each is needed.
 ::: cyxla.mirror_jax_registrations
 
 ::: cyxla.MIRROR_ENVIRONMENT_VARIABLE
+
+## Native functions
+
+::: cyxla.register_native_function
+
+::: cyxla.native_call
+
+::: cyxla.registered_native_functions
+
+::: cyxla.NativeFunctionInfo
+
+::: cyxla.NATIVE_ABI_VERSION

@@ -31,6 +31,13 @@ from cyxla._ffi import (
     target_provider,
 )
 from cyxla._lowering import HostCallbackError, LoweredProgram, lower
+from cyxla._native_functions import (
+    NATIVE_ABI_VERSION,
+    NativeFunctionInfo,
+    native_call,
+    register_native_function,
+    registered_native_functions,
+)
 from cyxla._plugins import (
     PLATFORM_ENVIRONMENT_VARIABLE,
     PLUGIN_ENVIRONMENT_VARIABLE,
@@ -108,6 +115,7 @@ __all__ = [
     "ABI_VERSION",
     "CACHE_ENVIRONMENT_VARIABLE",
     "MIRROR_ENVIRONMENT_VARIABLE",
+    "NATIVE_ABI_VERSION",
     "PLATFORM_ENVIRONMENT_VARIABLE",
     "PLUGIN_ENVIRONMENT_VARIABLE",
     "ArrayType",
@@ -122,6 +130,7 @@ __all__ = [
     "LoweredProgram",
     "MissingTarget",
     "MissingTargetError",
+    "NativeFunctionInfo",
     "OptionValue",
     "Plugin",
     "PluginModule",
@@ -151,9 +160,12 @@ __all__ = [
     "load_program",
     "lower",
     "mirror_jax_registrations",
+    "native_call",
     "missing_targets",
     "pack_program",
     "register_ffi_target",
+    "register_native_function",
+    "registered_native_functions",
     "record_custom_calls",
     "raise_last_error",
     "register_jax_targets",

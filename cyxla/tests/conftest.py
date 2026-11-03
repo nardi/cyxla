@@ -162,3 +162,33 @@ def ffi_library(ffi_library_path: Path) -> ctypes.CDLL:
     library = ctypes.CDLL(str(ffi_library_path))
     library.scale_handler.restype = ctypes.c_void_p
     return library
+
+
+@pytest.fixture(scope="session")
+def native_library_path(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Builds the library in `tests/native_library` with Meson and returns its path."""
+    build = tmp_path_factory.mktemp("native_library")
+    source = Path(__file__).parent / "native_library"
+    include = HEADER_DIRECTORY
+    for command in (
+        [
+            meson_executable(),
+            "setup",
+            str(build),
+            str(source),
+            "--vsenv",
+            "--buildtype=release",
+            f"-Dcyxla_include={include}",
+        ],
+        [meson_executable(), "compile", "-C", str(build)],
+    ):
+        result = subprocess.run(
+            command, capture_output=True, text=True, env=without_coverage(), check=False
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+    (path,) = [
+        path
+        for path in build.iterdir()
+        if "native_functions" in path.name and path.suffix in (".so", ".dylib", ".dll")
+    ]
+    return path
