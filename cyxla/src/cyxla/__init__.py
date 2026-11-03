@@ -29,7 +29,7 @@ from cyxla._ffi import (
     register_ffi_target,
     register_jax_targets,
 )
-from cyxla._lowering import LoweredProgram, lower
+from cyxla._lowering import HostCallbackError, LoweredProgram, lower
 from cyxla._plugins import (
     PLATFORM_ENVIRONMENT_VARIABLE,
     PLUGIN_ENVIRONMENT_VARIABLE,
@@ -112,6 +112,7 @@ __all__ = [
     "CompileStatistics",
     "ErrorInfo",
     "Executable",
+    "HostCallbackError",
     "LeafInfo",
     "LoweredProgram",
     "OptionValue",

@@ -102,6 +102,15 @@ def scaled(x):
 program = cx.lower(scaled, shapes, custom_calls=["my_target"])
 ```
 
+A function that is differentiated can call targets that the original does not, such as
+the transposed solve of a linear solver. `custom_calls="detect"` lowers the function
+once more, reads the targets from the result and allows all of them, so the list cannot
+become stale.
+
+```python
+program = cx.lower(scaled, shapes, custom_calls="detect")
+```
+
 The compiled executable refers to the handler by name. The disk cache therefore stays
 valid when a library updates its handler. The key of a lowered program only changes when
 the caller adds the library to the distributions of `cache_key`.
@@ -111,6 +120,9 @@ the caller adds the library to the distributions of `cache_key`.
 - Handlers of the untyped interface (`api_version=0`) fail to compile with an error
   about the API version.
 - `jax.pure_callback` and `jax.experimental.io_callback` call back into Python, which
-  the plugin cannot do. JAX refuses to serialize them.
+  the plugin cannot do. JAX refuses to serialize them, and `lower` raises a
+  `HostCallbackError` that lists each callback with the file and line that made it.
+  Libraries such as Equinox add callbacks through their error checks, and
+  `EQX_ON_ERROR=nan` removes those when it is set before Equinox is imported.
 - A target that nobody registered fails to compile with "No FFI handler registered for"
   and the target name, followed by a reminder to register it.

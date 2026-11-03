@@ -91,7 +91,8 @@ can stay without it, which saves about half a second. Call
 [`record_custom_calls`][cyxla.record_custom_calls] returns the targets that the records
 of a bundle need, and `initialize` registers the handlers of jaxlib for them when it is
 left at its default. `Executable.warm_up` executes a program once on zeros, so that the
-first real call does not pay for loading its code.
+first real call does not pay for loading its code. A program that checks its inputs can
+fail on zeros, and `warm_up` then takes the arguments to run on.
 
 ## Checking trees
 
