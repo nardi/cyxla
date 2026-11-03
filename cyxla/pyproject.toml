@@ -86,8 +86,9 @@ select = ["E4", "E7", "E9", "F", "I"]
 [tool.ruff.lint.per-file-ignores]
 # Names from `cython.cimports` are declared in `.pxd` files that ruff does not read.
 "src/cyxla/_runtime.py" = ["F821"]
+"src/cyxla/_native.py" = ["F821"]
 "tests/downstream/src/*.py" = ["F821"]
 
 [tool.ty.src]
 # The Cython modules are checked through their `.pyi` stubs.
-exclude = ["src/cyxla/_runtime.py", "tests/downstream/src"]
+exclude = ["src/cyxla/_runtime.py", "src/cyxla/_native.py", "tests/downstream/src"]

@@ -12,6 +12,7 @@ nav = [
   { "Guide" = [
     { "Programs" = "guide/running.md" },
     { "Custom calls" = "guide/custom-calls.md" },
+    { "Native functions" = "guide/native-functions.md" },
     { "Extension modules" = "guide/extensions.md" },
     { "Plugins" = "guide/plugins.md" },
     { "Cache and memory" = "guide/caching.md" },

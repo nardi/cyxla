@@ -263,6 +263,7 @@ def lower(
             )
         case _:
             allowed = tuple(custom_calls)
+    allowed = (*allowed, _targets.NATIVE_TARGET)
     try:
         exported = jax.export.export(
             jitted,
