@@ -60,6 +60,26 @@ executable, _ = cx.compile_program(program, disk_cache=False)
 assert result.tolist() == [2.5, 5.0, 7.5], result
 assert np.asarray(jax.jit(function)(np.array([1.0, 2.0, 3.0]))).tolist() == [2.5, 5.0, 7.5]
 
+# The attribute reader of the native header converts the numeric types it knows and returns
+# NaN for others, for a string and for an attribute that is missing.
+point = np.array([1.0, 2.0, 3.0])
+structure = jax.ShapeDtypeStruct(point.shape, point.dtype)
+for factor, expected in (
+    (np.float32(2.0), 2.0),
+    (np.int64(3), 3.0),
+    (np.int32(4), 4.0),
+    (np.uint8(5), np.nan),
+    ("text", np.nan),
+):
+    scaled = jax.jit(
+        lambda x, factor=factor: cx.native_call(
+            "downstream.scale", structure, x, factor=factor
+        )
+    )(point)
+    np.testing.assert_array_equal(np.asarray(scaled), expected * point)
+missing = jax.jit(lambda x: cx.native_call("downstream.scale", structure, x))(point)
+assert np.isnan(np.asarray(missing)).all()
+
 kernel = downstream_native.ScaleAndShift(10.0)
 shifted = cx.native_primitive(kernel)
 point = np.array([1.0, 2.0, 3.0])

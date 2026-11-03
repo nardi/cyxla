@@ -3,6 +3,8 @@
 `handle_call` is an XLA FFI handler. A program calls the target `cyxla_native_function` with
 the attribute `name`, and the handler finds the function that was registered under that name
 and passes it the buffers of the call. See `cyxla/native.h` for the interface of a function.
+The module registers one function itself, `cyxla.python_callback`, which runs the Python
+callbacks of programs that were lowered with `host_callbacks=True`.
 
 The table of functions is replaced as a whole when a function is registered, and the old
 table is never freed. The handler reads the table without the GIL and without a lock, so
@@ -35,14 +37,22 @@ from cython.cimports.cyxla._native import (
     NATIVE_ABI_VERSION,
     NATIVE_ATTRIBUTE_SCALAR,
     NATIVE_ATTRIBUTE_STRING,
+    NATIVE_U64,
     NativeArray,
     NativeAttribute,
     NativeEntry,
     NativeFunction,
     entries,
     entry_count,
+    native_find_attribute,
+    native_size,
     registration_hook,
 )
+from cython.cimports.cyxla._platform import (
+    THREAD_MESSAGE_SIZE,
+    cyxla_thread_message,
+)
+from cython.cimports.libc.stdint import int64_t
 from cython.cimports.libc.stdio import snprintf
 from cython.cimports.libc.string import memcmp, memcpy, memset, strlen
 
@@ -279,6 +289,115 @@ def register_native_address(
         cython.cast(NativeFunction, function),
         cython.cast(cython.p_void, user_data),
     )
+
+
+python_dispatch: object = None
+"""The function that runs a Python callback, set by `cyxla._callbacks`."""
+
+
+def set_python_dispatch(dispatch: object) -> None:
+    """Sets the function that `python_callback` calls with the GIL held."""
+    global python_dispatch
+    python_dispatch = dispatch
+
+
+@cython.cfunc
+def describe_arrays(
+    count: int64_t, arrays: cython.pointer[cython.const[NativeArray]]
+) -> list:
+    """Returns the element type, shape, element count and address of each array.
+
+    The Python dispatch builds its views from these.
+    """
+    described: list = []
+    position: int64_t
+    axis: int64_t
+    for position in range(count):
+        dimensions: list = []
+        for axis in range(arrays[position].rank):
+            dimensions.append(arrays[position].dimensions[axis])
+        described.append(
+            (
+                arrays[position].dtype,
+                tuple(dimensions),
+                native_size(cython.address(arrays[position])),
+                cython.cast(cython.size_t, arrays[position].data),
+            )
+        )
+    return described
+
+
+@cython.cfunc
+@cython.exceptval(check=False)
+def run_dispatch(
+    index: cython.ulonglong,
+    argument_count: int64_t,
+    arguments: cython.pointer[cython.const[NativeArray]],
+    result_count: int64_t,
+    results: cython.pointer[NativeArray],
+    message: cython.p_char,
+) -> cython.int:
+    """Calls the Python dispatch and returns 1 after writing the message of an exception.
+
+    The message has the type of the exception followed by its text. It is cut to the size of
+    the buffer. This runs with the GIL held, and it catches everything, because the runtime
+    that called the native function cannot handle a Python exception.
+    """
+    try:
+        python_dispatch(
+            index,
+            describe_arrays(argument_count, arguments),
+            describe_arrays(result_count, results),
+        )
+    except BaseException as error:
+        text: bytes = f"{type(error).__name__}: {error}".encode("utf-8", "replace")
+        snprintf(message, THREAD_MESSAGE_SIZE, b"%s", cython.cast(cython.p_char, text))
+        return 1
+    return 0
+
+
+@cython.cfunc
+@cython.nogil
+@cython.exceptval(check=False)
+def python_callback(
+    user_data: cython.p_void,
+    argument_count: int64_t,
+    arguments: cython.pointer[cython.const[NativeArray]],
+    result_count: int64_t,
+    results: cython.pointer[NativeArray],
+    attribute_count: int64_t,
+    attributes: cython.pointer[cython.const[NativeAttribute]],
+) -> cython.pointer[cython.const[cython.char]]:
+    """Calls the Python callback that the attribute `index` names, with the GIL taken.
+
+    Programs with callbacks call this native function. The message of a failure is in a
+    buffer of the calling thread, which stays valid until the thread calls a native function
+    again.
+    """
+    attribute: cython.pointer[cython.const[NativeAttribute]] = native_find_attribute(
+        attributes, attribute_count, b"index"
+    )
+    if (
+        attribute == cython.NULL
+        or attribute.kind != NATIVE_ATTRIBUTE_SCALAR
+        or attribute.dtype != NATIVE_U64
+    ):
+        return b"ValueError: The call of the callback has no attribute index."
+    index: cython.ulonglong = cython.cast(
+        cython.pointer[cython.const[cython.ulonglong]], attribute.value
+    )[0]
+    message: cython.p_char = cyxla_thread_message()
+    failed: cython.int
+    with cython.gil:
+        failed = run_dispatch(
+            index, argument_count, arguments, result_count, results, message
+        )
+    if failed:
+        return message
+    return cython.NULL
+
+
+register_native(b"cyxla.python_callback", python_callback, cython.NULL)
 
 
 def handler_address() -> cython.size_t:

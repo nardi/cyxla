@@ -462,3 +462,48 @@ def test_handlers_the_plugin_cannot_take_raise_a_warning(
         """
     )
     assert result.returncode == 0, result.stderr
+
+
+def callback_program() -> cx.LoweredProgram:
+    """Lowers a function with a Python callback the way JAX does, as a portable artifact.
+
+    `jax.export` refuses callbacks, so the module comes from the lowering of `jax.jit`.
+    """
+    from jaxlib.mlir.dialects import stablehlo
+
+    def function(x: jax.Array) -> jax.Array:
+        jax.debug.callback(lambda value: None, x)
+        return x * 2.0
+
+    lowered = (
+        jax.jit(function)
+        .trace(jax.ShapeDtypeStruct((3,), jnp.float64))
+        .lower(lowering_platforms=("cpu",))
+    )
+    version = stablehlo.get_version_from_compatibility_requirement(
+        stablehlo.StablehloCompatibilityRequirement.WEEK_4
+    )
+    # Serializing rewrites the module in place into a versioned dialect, so the text of the
+    # module has to be read first.
+    module_text = lowered.as_text()
+    code = stablehlo.serialize_portable_artifact(
+        lowered.compiler_ir("stablehlo"), version, True
+    )
+    return cx.LoweredProgram(
+        bytes(code),
+        module_text,
+        (cx.ArrayType(np.dtype("float64"), (3,)),),
+        "cpu",
+    )
+
+
+def test_callback_handlers_of_jaxlib_are_not_mirrored() -> None:
+    """Checks that a program with a JAX callback fails to compile and does not crash."""
+    program = callback_program()
+    assert "xla_ffi_python_cpu_callback" in cx.custom_call_targets(program.text)
+    for name in _ffi.PYTHON_CALLBACK_TARGETS:
+        assert ("cpu", name) not in _ffi.targets
+    with pytest.raises(
+        RuntimeError, match="No FFI handler registered for xla_ffi_python_cpu_callback"
+    ):
+        cx.compile_program(program, disk_cache=False)

@@ -63,9 +63,9 @@ describes.
 
 ## Limits
 
-TPUs do not support `float64`. Python callbacks and the untyped custom calls of older
-libraries do not run on the plugins. The GPU and TPU paths are tested only up to
-creating the client, because CI has no such hardware. The [custom
+TPUs do not support `float64`. The untyped custom calls of older libraries do not run on
+the plugins, and Python callbacks run on the CPU only. The GPU and TPU paths are tested
+only up to creating the client, because CI has no such hardware. The [custom
 calls](guide/custom-calls.md) page covers what works there.
 
 ## License

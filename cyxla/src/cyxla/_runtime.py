@@ -115,7 +115,13 @@ from cython.cimports.libc.stdlib import calloc, free
 from cython.cimports.libc.string import memcpy, memset
 from numpy.typing import ArrayLike
 
-from cyxla._types import ArrayType, ErrorInfo, OptionValue, RuntimeInfo
+from cyxla._types import (
+    ArrayType,
+    ErrorInfo,
+    OptionValue,
+    RuntimeInfo,
+    refuse_callbacks,
+)
 
 MINIMUM_API_MINOR_VERSION = 111
 """Oldest minor version of the PJRT C API that the runtime supports."""
@@ -917,6 +923,8 @@ class Executable:
         """
         if self.serialized_bytes is not None:
             return bytes(self.serialized_bytes)
+        if self.program is not None:
+            refuse_callbacks(self.program, "serialized")
         unloaded: cython.pointer[PJRT_Executable] = get_executable(self.handle)
         arguments: PJRT_Executable_Serialize_Args
         memset(cython.address(arguments), 0, cython.sizeof(arguments))

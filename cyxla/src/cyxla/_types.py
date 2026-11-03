@@ -4,12 +4,30 @@ import math
 from collections.abc import Mapping
 from pathlib import Path
 from types import MappingProxyType
-from typing import NamedTuple
+from typing import NamedTuple, Protocol
 
 import numpy as np
 
 OptionValue = bool | int | float | str | tuple[int, ...]
 """A value of a `PJRT_Client_Create` option, one of the types of `PJRT_NamedValue`."""
+
+
+class MaybeCallbacks(Protocol):
+    """A lowered program, seen only for whether it calls Python callbacks."""
+
+    @property
+    def callbacks(self) -> object | None:
+        """The handle of the callbacks of the program, or `None` for a program without."""
+        ...
+
+
+def refuse_callbacks(program: MaybeCallbacks, action: str) -> None:
+    """Raises an error if a program calls Python callbacks, which only exist in this process."""
+    if program.callbacks is not None:
+        raise ValueError(
+            f"A program with Python callbacks cannot be {action}, because it refers to "
+            "its callbacks by numbers that only mean something in this process."
+        )
 
 
 class ArrayType(NamedTuple):
