@@ -11,6 +11,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from conftest import run_python
 
 import cyxla as cx
 
@@ -243,3 +244,89 @@ def test_calls_that_the_handler_refuses(natives: SimpleNamespace) -> None:
         executable, _ = cx.compile_program(cx.lower(function, SHAPES), disk_cache=False)
         with pytest.raises(RuntimeError, match=message):
             executable.run([POINT])
+
+
+PROVIDER = """
+import ctypes
+import os
+
+import cyxla
+
+library = ctypes.CDLL(os.environ["NATIVE_LIBRARY"])
+cyxla.register_native_function(
+    "saved.scale", ctypes.cast(library.scale, ctypes.c_void_p).value
+)
+"""
+"""A module that registers a native function when it is imported, like a library does."""
+
+SAVER = """
+import sys
+
+import jax
+import jax.numpy as jnp
+
+import cyxla as cx
+
+sys.path.insert(0, sys.argv[1])
+import native_provider
+
+jax.config.update("jax_enable_x64", True)
+spec = jax.ShapeDtypeStruct((3,), jnp.float64)
+program = cx.lower(lambda x: cx.native_call("saved.scale", spec, x, factor=4.0), (spec,))
+executable, _ = cx.compile_program(program, disk_cache=False)
+writer = cx.BundleWriter("test.program", 1)
+record = cx.pack_program(writer, "scale", executable)
+assert record["native_functions"] == {
+    "saved.scale": {"provider": "native_provider", "version": None}
+}, record["native_functions"]
+assert "cyxla_native_function" not in record["registered_targets"]
+writer.write(sys.argv[2], {"record": record})
+"""
+"""Saves a program that calls a native function that a provider module registers."""
+
+LOADER = """
+import sys
+
+import numpy as np
+
+import cyxla as cx
+
+bundle = cx.Bundle.read(sys.argv[1], "test.program", 1)
+record = bundle.meta["record"]
+cx.initialize(platform="cpu")
+try:
+    cx.check_targets([record])
+except cx.MissingTargetError as error:
+    assert "saved.scale (native function, provided by native_provider)" in str(error), error
+else:
+    raise AssertionError("The missing function was not reported.")
+
+sys.path.insert(0, sys.argv[2])
+cx.check_targets([record], import_providers=True)
+executable, statistics = cx.load_program(bundle, record)
+assert statistics.loaded == 1 and statistics.compiled == 0, statistics
+(result,) = executable.run([np.array([1.0, 2.0, 3.0])])
+assert result.tolist() == [4.0, 8.0, 12.0], result
+"""
+"""Loads the saved program in a fresh process, which lacks the function until it imports."""
+
+
+def test_saved_program_finds_its_function_in_another_process(
+    natives: SimpleNamespace, native_library_path: Path, tmp_path: Path
+) -> None:
+    """Checks that a bundle refers to a native function by name and provider, not by address."""
+    (tmp_path / "native_provider.py").write_text(PROVIDER)
+    environment = {"NATIVE_LIBRARY": str(native_library_path)}
+    bundle_path = tmp_path / "scale.bundle"
+    saved = run_python(
+        f"import sys; sys.argv = ['saver', {str(tmp_path)!r}, {str(bundle_path)!r}]\n"
+        + SAVER,
+        environment,
+    )
+    assert saved.returncode == 0, saved.stdout + saved.stderr
+    loaded = run_python(
+        f"import sys; sys.argv = ['loader', {str(bundle_path)!r}, {str(tmp_path)!r}]\n"
+        + LOADER,
+        environment,
+    )
+    assert loaded.returncode == 0, loaded.stdout + loaded.stderr

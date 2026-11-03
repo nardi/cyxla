@@ -160,9 +160,9 @@ def test_check_names_each_missing_target() -> None:
     with pytest.raises(cx.MissingTargetError) as caught:
         cx.check_targets([record])
     message = str(caught.value)
-    assert f"{unknown} (the provider is not known)" in message
-    assert f"{versionless} (provided by loose_module)" in message
-    assert f"{full} (provided by library 2.0)" in message
+    assert f"{unknown} (FFI target, the provider is not known)" in message
+    assert f"{versionless} (FFI target, provided by loose_module)" in message
+    assert f"{full} (FFI target, provided by library 2.0)" in message
     assert "Import the library" in message
 
 
