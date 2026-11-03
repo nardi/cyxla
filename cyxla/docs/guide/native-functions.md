@@ -93,6 +93,17 @@ the life of the process. Values that belong to one call are attributes and are s
 the program, and state that belongs to the function is created again when a process
 imports the library that registers it.
 
+## Saved programs
+
+A program that calls a native function can be stored with `pack_program`. The record
+holds the name of each function and the package and version that registered it, as for
+the targets of other libraries. The process that loads the program has to import the
+library that registers the function first. Loading checks this with
+[`check_targets`][cyxla.check_targets], which names each missing function with its
+provider, and `import_providers=True` imports the providers itself. The library
+registers its functions when it is imported, so the same name means the same function in
+both processes.
+
 ## Limits
 
 - Only dense arrays of the element types in `native.h` are passed, and a call has at

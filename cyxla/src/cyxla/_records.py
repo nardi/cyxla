@@ -13,7 +13,7 @@ from typing import Any, Literal, NamedTuple
 
 import numpy as np
 
-from cyxla import _ffi, _targets
+from cyxla import _ffi, _native_functions, _targets
 from cyxla._bundle import Bundle, BundleWriter
 from cyxla._cache import CompileStatistics, compile_program
 from cyxla._lowering import LoweredProgram
@@ -30,7 +30,7 @@ class MissingTargetError(RuntimeError):
 
 
 class MissingTarget(NamedTuple):
-    """An FFI target that a stored program needs and this process has not registered."""
+    """An FFI target or native function that a stored program needs and this process lacks."""
 
     name: str
     """The name of the custom call target."""
@@ -38,6 +38,8 @@ class MissingTarget(NamedTuple):
     """The package that registered the target when the program was stored, if known."""
     version: str | None
     """The version of the distribution of the provider at that time, if known."""
+    kind: str = "FFI target"
+    """Either `FFI target` or `native function`."""
 
 
 def distribution_version(package: str | None) -> str | None:
@@ -61,12 +63,26 @@ def registered_targets(
         return {}
     found: dict[str, dict[str, str | None]] = {}
     for name in names:
+        # Native functions are recorded by their own names, which tell more than the target
+        # of the handler that calls them.
+        if name == _targets.NATIVE_TARGET:
+            continue
         target = _ffi.targets.get((_ffi.platform_key(platform), name))
         if target is not None:
             found[name] = {
                 "provider": target.provider,
                 "version": distribution_version(target.provider),
             }
+    return found
+
+
+def native_function_origins(text: str) -> dict[str, dict[str, str | None]]:
+    """Returns the provider and its version for each native function that a module calls."""
+    found: dict[str, dict[str, str | None]] = {}
+    for name in _targets.native_function_names(text):
+        info = _native_functions.native_functions.get(name)
+        provider = None if info is None else info.provider
+        found[name] = {"provider": provider, "version": distribution_version(provider)}
     return found
 
 
@@ -97,6 +113,7 @@ def pack_program(
         ],
         "custom_calls": list(custom_calls),
         "registered_targets": registered_targets(custom_calls, program.platform),
+        "native_functions": native_function_origins(program.text),
         "code": code_blob,
         "executables": {_targets.target_fingerprint().key: executable_blob},
     }
@@ -113,30 +130,40 @@ def record_custom_calls(records: list[Mapping[str, Any]]) -> tuple[str, ...]:
 
 
 def missing_targets(records: Sequence[Mapping[str, Any]]) -> tuple[MissingTarget, ...]:
-    """Returns the targets that records need which this process has not registered.
+    """Returns the targets and native functions that records need which are not registered.
 
     Only targets that were registered with cyxla when the program was stored count, since
-    the plugin has the others built in. Call it after `initialize`, which registers the
-    handlers of jaxlib, and after the libraries of the programs are imported. A record from
-    before targets were recorded needs none.
+    the plugin has the others built in. Every native function that a program calls counts.
+    Call it after `initialize`, which registers the handlers of jaxlib, and after the
+    libraries of the programs are imported. A record that an older version of cyxla wrote
+    has none of them and needs none.
     """
-    found: dict[str, MissingTarget] = {}
+    found: dict[tuple[str, str], MissingTarget] = {}
     for record in records:
         platform = _ffi.platform_key(record["platform"])
         for name, origin in record.get("registered_targets", {}).items():
             if (platform, name) not in _ffi.applied:
                 found.setdefault(
-                    name, MissingTarget(name, origin["provider"], origin["version"])
+                    ("FFI target", name),
+                    MissingTarget(name, origin["provider"], origin["version"]),
                 )
-    return tuple(sorted(found.values(), key=lambda target: target.name))
+        for name, origin in record.get("native_functions", {}).items():
+            if name not in _native_functions.native_functions:
+                found.setdefault(
+                    ("native function", name),
+                    MissingTarget(
+                        name, origin["provider"], origin["version"], "native function"
+                    ),
+                )
+    return tuple(sorted(found.values(), key=lambda target: (target.kind, target.name)))
 
 
 def check_targets(
     records: Sequence[Mapping[str, Any]], import_providers: bool = False
 ) -> None:
-    """Raises a `MissingTargetError` unless every target that records need is registered.
+    """Raises a `MissingTargetError` unless the targets and functions of records are registered.
 
-    The error names each target with the package and version that provided it. With
+    The error names each one with the package and version that provided it. With
     `import_providers` the missing ones are imported first, which makes the library register
     its handlers. A name in a file is code to run, so this stays off unless the caller
     trusts the file.
@@ -156,17 +183,18 @@ def check_targets(
         missing = missing_targets(records)
     if not missing:
         return
-    lines = ["The programs call FFI targets that no library has registered:"]
+    lines = [
+        "The programs need FFI targets or native functions that nothing has registered:"
+    ]
     for target in missing:
-        match target:
-            case MissingTarget(name, None, _):
-                lines.append(f"  {name} (the provider is not known)")
-            case MissingTarget(name, provider, None):
-                lines.append(f"  {name} (provided by {provider})")
+        match target.provider, target.version:
+            case None, _:
+                origin = "the provider is not known"
+            case provider, None:
+                origin = f"provided by {provider}"
             case _:
-                lines.append(
-                    f"  {target.name} (provided by {target.provider} {target.version})"
-                )
+                origin = f"provided by {target.provider} {target.version}"
+        lines.append(f"  {target.name} ({target.kind}, {origin})")
     lines.append("Import the library that provides them before loading the programs.")
     raise MissingTargetError("\n".join(lines))
 

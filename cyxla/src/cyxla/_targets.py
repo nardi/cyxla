@@ -12,6 +12,12 @@ from cyxla import _plugins, _runtime
 NATIVE_TARGET = "cyxla_native_function"
 """The custom call target of the handler for native functions, which cyxla always allows."""
 
+NATIVE_NAME_PATTERN = re.compile(
+    r"custom_call @" + NATIVE_TARGET + r"\([^\n]*?backend_config = \{"
+    r'(?:[^}"]|"(?:[^"\\]|\\.)*")*?\bname = "((?:[^"\\]|\\.)*)"'
+)
+"""A call of a native function in the text of a module, with the name of the function."""
+
 CUSTOM_CALL_PATTERN = re.compile(r"custom_call\s+@([\w.$-]+)")
 """A custom call in the text of a StableHLO module, with the name of its target."""
 
@@ -92,6 +98,11 @@ def target_fingerprint() -> TargetFingerprint:
         plugin_size=identity.size,
         api_version=f"{info.api_major_version}.{info.api_minor_version}",
     )
+
+
+def native_function_names(text: str) -> tuple[str, ...]:
+    """Returns the names of the native functions that a StableHLO module calls, sorted."""
+    return tuple(sorted(set(NATIVE_NAME_PATTERN.findall(text))))
 
 
 def custom_call_targets(text: str) -> tuple[str, ...]:

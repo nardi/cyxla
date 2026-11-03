@@ -37,6 +37,12 @@ native_functions: dict[str, NativeFunctionInfo] = {}
 handler_function: Any = None
 """The handler as a `ctypes` function, which the capsule for JAX refers to."""
 
+registered_with_plugin = False
+"""Whether the handler is registered with the plugin."""
+
+registered_with_jax = False
+"""Whether the handler is registered with the runtime of JAX."""
+
 
 def record_registration(name: str) -> None:
     """Notes the provider of a function that was just registered, called by the native module."""
@@ -53,22 +59,26 @@ def record_registration(name: str) -> None:
 _native.set_registration_hook(record_registration)
 
 
-def register_handler() -> None:
-    """Registers the handler for native functions with the plugin and with JAX.
+def register_handler(with_jax: bool = False) -> None:
+    """Registers the handler for native functions with the plugin, and with JAX if asked.
 
-    Calling it again does nothing.
+    Registering with JAX imports it, which a process that only loads programs avoids, so
+    `native_call` is where that happens. Calling the function again does nothing.
     """
-    global handler_function
-    if handler_function is not None:
-        return
-    import jax
-
+    global handler_function, registered_with_plugin, registered_with_jax
     address = _native.handler_address()
-    handler_function = ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p)(address)
-    _ffi.add_target(_targets.NATIVE_TARGET, address, "cpu", False, "cyxla")
-    jax.ffi.register_ffi_target(
-        _targets.NATIVE_TARGET, jax.ffi.pycapsule(handler_function), platform="cpu"
-    )
+    if handler_function is None:
+        handler_function = ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p)(address)
+    if not registered_with_plugin:
+        _ffi.add_target(_targets.NATIVE_TARGET, address, "cpu", False, "cyxla")
+        registered_with_plugin = True
+    if with_jax and not registered_with_jax:
+        import jax
+
+        jax.ffi.register_ffi_target(
+            _targets.NATIVE_TARGET, jax.ffi.pycapsule(handler_function), platform="cpu"
+        )
+        registered_with_jax = True
 
 
 def register_native_function(
@@ -117,7 +127,7 @@ def native_call(
     """
     import jax
 
-    register_handler()
+    register_handler(with_jax=True)
     call = jax.ffi.ffi_call(
         _targets.NATIVE_TARGET,
         results,
