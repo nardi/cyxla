@@ -86,7 +86,7 @@ positions, charges = rng.normal(size=(4, 2)), rng.uniform(1.0, 2.0, size=4)
 assert np.allclose(value, energy(positions, charges))
 ```
 
-A program takes at most 8 arguments and returns at most 4 outputs. `run` copies its
+A program takes at most 8 arguments and returns at most 8 outputs. `run` copies its
 arguments into aligned memory first, so it measures more than an execution does. It is
 meant for tests and interactive checks. The `execute` function of an [extension
 module](extensions.md) reuses the buffers and takes no GIL.

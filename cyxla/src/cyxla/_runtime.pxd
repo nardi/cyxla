@@ -17,10 +17,10 @@ cdef enum:
     # The version of the declarations below that other extension modules compile against.
     # It changes whenever a struct or a function signature changes, so `cyxla.check_abi`
     # can reject a module compiled against other declarations.
-    ABI_VERSION = 4
+    ABI_VERSION = 5
     ALIGNMENT = 64
     MAX_INPUTS = 8
-    MAX_OUTPUTS = 4
+    MAX_OUTPUTS = 8
 
 
 cdef struct ProgramSpec:
