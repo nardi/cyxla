@@ -38,6 +38,11 @@ from cyxla._native_functions import (
     register_native_function,
     registered_native_functions,
 )
+from cyxla._native_primitives import (
+    NativeFunctionKernel,
+    NativeKernel,
+    native_primitive,
+)
 from cyxla._plugins import (
     PLATFORM_ENVIRONMENT_VARIABLE,
     PLUGIN_ENVIRONMENT_VARIABLE,
@@ -131,6 +136,8 @@ __all__ = [
     "MissingTarget",
     "MissingTargetError",
     "NativeFunctionInfo",
+    "NativeFunctionKernel",
+    "NativeKernel",
     "OptionValue",
     "Plugin",
     "PluginModule",
@@ -161,6 +168,7 @@ __all__ = [
     "lower",
     "mirror_jax_registrations",
     "native_call",
+    "native_primitive",
     "missing_targets",
     "pack_program",
     "register_ffi_target",

@@ -10,10 +10,16 @@ cyxla_include = run_command(
   python, '-c', 'import cyxla; print("\\n".join(cyxla.get_include()))', check: true,
 ).stdout().strip().split('\n')
 
-foreach name : ['downstream_square', 'downstream_native']
+# Each module is a pure Python mode source (`py`) or a classic Cython source (`pyx`).
+foreach module : [
+  ['downstream_square', 'py'],
+  ['downstream_native', 'py'],
+  ['downstream_native_pyx', 'pyx'],
+]
+name = module[0]
 module_c = custom_target(
   name + '.c',
-  input: 'src/' + name + '.py',
+  input: 'src/' + name + '.' + module[1],
   output: name + '.c',
   command: [
     cython, '-3', '--fast-fail', '-I', cyxla_include[1],

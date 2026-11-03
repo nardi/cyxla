@@ -8,6 +8,7 @@ python.install_sources(
   '_ffi.py',
   '_lowering.py',
   '_native_functions.py',
+  '_native_primitives.py',
   '_plugins.py',
   '_records.py',
   '_targets.py',
