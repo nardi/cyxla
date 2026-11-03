@@ -59,6 +59,33 @@ executable, _ = cx.compile_program(program, disk_cache=False)
 (result,) = executable.run([np.array([1.0, 2.0, 3.0])])
 assert result.tolist() == [2.5, 5.0, 7.5], result
 assert np.asarray(jax.jit(function)(np.array([1.0, 2.0, 3.0]))).tolist() == [2.5, 5.0, 7.5]
+
+kernel = downstream_native.ScaleAndShift(10.0)
+shifted = cx.native_primitive(kernel)
+point = np.array([1.0, 2.0, 3.0])
+assert np.asarray(shifted(point, factor=2.0)).tolist() == [12.0, 14.0, 16.0]
+program = cx.lower(
+    lambda x: shifted(x, factor=2.0), (jax.ShapeDtypeStruct((3,), jnp.float64),)
+)
+executable, _ = cx.compile_program(program, disk_cache=False)
+assert executable.run([point])[0].tolist() == [12.0, 14.0, 16.0]
+
+import downstream_native_pyx
+
+(pyx_result,) = cx.compile_program(
+    cx.lower(
+        lambda x: cx.native_call(
+            "downstream.scale_pyx", jax.ShapeDtypeStruct(x.shape, x.dtype), x, factor=2.0
+        ),
+        (jax.ShapeDtypeStruct((3,), jnp.float64),),
+    ),
+    disk_cache=False,
+)[0].run([np.array([1.0, 2.0, 3.0])])
+assert pyx_result.tolist() == [2.0, 4.0, 6.0], pyx_result
+shifted_pyx = downstream_native_pyx.scale
+assert np.asarray(shifted_pyx(point, factor=3.0)).tolist() == [13.0, 16.0, 19.0]
+assert np.asarray(jax.grad(lambda x: shifted_pyx(x, factor=3.0).sum())(point)).tolist() == [3.0, 3.0, 3.0]
+assert np.asarray(jax.vmap(lambda x: shifted_pyx(x, factor=1.0))(np.eye(3))).shape == (3, 3)
 """
 """Imports the Cython module that registers a native function, and calls it from a program."""
 

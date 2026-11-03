@@ -24,3 +24,9 @@ guide](../guide/custom-calls.md) explains when each is needed.
 ::: cyxla.NativeFunctionInfo
 
 ::: cyxla.NATIVE_ABI_VERSION
+
+::: cyxla.native_primitive
+
+::: cyxla.NativeKernel
+
+::: cyxla.NativeFunctionKernel
