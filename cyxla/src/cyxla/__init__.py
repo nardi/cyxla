@@ -28,6 +28,7 @@ from cyxla._ffi import (
     mirror_jax_registrations,
     register_ffi_target,
     register_jax_targets,
+    target_provider,
 )
 from cyxla._lowering import HostCallbackError, LoweredProgram, lower
 from cyxla._plugins import (
@@ -39,8 +40,12 @@ from cyxla._plugins import (
     initialize,
 )
 from cyxla._records import (
+    MissingTarget,
+    MissingTargetError,
     TargetMismatchError,
+    check_targets,
     load_program,
+    missing_targets,
     pack_program,
     record_custom_calls,
 )
@@ -115,6 +120,8 @@ __all__ = [
     "HostCallbackError",
     "LeafInfo",
     "LoweredProgram",
+    "MissingTarget",
+    "MissingTargetError",
     "OptionValue",
     "Plugin",
     "PluginModule",
@@ -125,6 +132,7 @@ __all__ = [
     "cache_directory",
     "cache_key",
     "check_abi",
+    "check_targets",
     "check_fingerprint",
     "compile_options",
     "compile_program",
@@ -143,6 +151,7 @@ __all__ = [
     "load_program",
     "lower",
     "mirror_jax_registrations",
+    "missing_targets",
     "pack_program",
     "register_ffi_target",
     "record_custom_calls",
@@ -152,5 +161,6 @@ __all__ = [
     "store_lowered",
     "override_target",
     "target_fingerprint",
+    "target_provider",
     "tree_fingerprint",
 ]

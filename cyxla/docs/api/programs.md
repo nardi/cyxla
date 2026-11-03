@@ -4,6 +4,8 @@ Lowering, compiling and the records they return.
 
 ::: cyxla.lower
 
+::: cyxla.HostCallbackError
+
 ::: cyxla.ArrayType
 
 ::: cyxla.LoweredProgram

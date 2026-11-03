@@ -15,9 +15,6 @@ if TYPE_CHECKING:
 LOWERING_PLATFORMS = frozenset({"cpu", "cuda", "rocm", "tpu"})
 """Platforms that `jax.export` lowers for, which are also the names the plugins report."""
 
-DETECT = "detect"
-"""The value of `custom_calls` that allows every custom call the function makes."""
-
 
 class HostCallbackError(NotImplementedError):
     """A function calls back into Python, which a lowered program cannot do."""

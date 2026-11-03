@@ -94,6 +94,25 @@ left at its default. `Executable.warm_up` executes a program once on zeros, so t
 first real call does not pay for loading its code. A program that checks its inputs can
 fail on zeros, and `warm_up` then takes the arguments to run on.
 
+## Targets of libraries
+
+A program that calls the handlers of a library needs that library imported when it
+loads, because the handlers live in the library. A record stores the package that
+registered each target and the version of its distribution.
+[`check_targets`][cyxla.check_targets] raises a
+[`MissingTargetError`][cyxla.MissingTargetError] after `initialize` and before the first
+run, and the message names each missing target with its provider.
+
+```python
+cx.check_targets(records)
+```
+
+The provider is known when the library registered its handlers after cyxla was imported.
+Handlers that were already in the registry of JAX when the plugin started have no
+recorded provider. Importing the missing providers is up to the caller, or
+`check_targets(records, import_providers=True)` does it. Importing a name from a file
+runs the code of that package, so the option is off by default.
+
 ## Checking trees
 
 A saved object works on flat vectors, so the caller supplies the trees that those

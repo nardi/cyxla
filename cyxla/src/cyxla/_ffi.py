@@ -11,6 +11,7 @@ import contextlib
 import ctypes
 import importlib
 import os
+import sys
 import warnings
 from collections.abc import Callable, Mapping
 from typing import Any, NamedTuple
@@ -39,6 +40,13 @@ PLATFORM_ALIASES = {"host": "cpu", "gpu": "cuda"}
 PLATFORM_SPELLINGS = {"cpu": "cpu", "cuda": "CUDA", "rocm": "ROCM"}
 """Spellings of platform names that XLA's FFI registry takes, as JAX passes them."""
 
+PASSTHROUGH_PACKAGES = frozenset({"jax", "jaxlib", "cyxla", "importlib", "builtins"})
+"""Top-level packages whose frames are skipped when looking for the registering library.
+
+A library that provides FFI handlers calls `register_ffi_target` of JAX or of cyxla, so the
+frames of these packages lie between the call of the library and the registry.
+"""
+
 
 class Target(NamedTuple):
     """A handler registered under a name for a platform."""
@@ -51,6 +59,8 @@ class Target(NamedTuple):
     """Lower-case platform name, as in `RuntimeInfo.platform`."""
     traits: int
     """Handler traits as a bit set."""
+    provider: str | None = None
+    """The top-level package that registered the handler, or `None` when it is not known."""
 
 
 targets: dict[tuple[str, str], Target] = {}
@@ -67,6 +77,22 @@ def platform_key(platform: str) -> str:
     """Returns the lower-case name that identifies a platform, whichever spelling is given."""
     name = platform.lower()
     return PLATFORM_ALIASES.get(name, name)
+
+
+def calling_package() -> str | None:
+    """Returns the top-level package of the nearest caller that is not part of the plumbing.
+
+    A library registers its handlers when it is imported, through `jax.ffi` or through
+    `register_ffi_target`, and both pass through frames of JAX and cyxla. The first frame
+    beyond them belongs to the library. A registration from a script has no package to name.
+    """
+    frame = sys._getframe(1)
+    while frame is not None:
+        package = str(frame.f_globals.get("__name__", "")).partition(".")[0]
+        if package and package not in PASSTHROUGH_PACKAGES:
+            return None if package == "__main__" else package
+        frame = frame.f_back
+    return None
 
 
 def capsule_address(capsule: object) -> int:
@@ -146,6 +172,21 @@ def register_ffi_target(
     another handler raises an error, as the plugin keeps a registration for the whole
     process. A handler for a platform other than the plugin's waits until a plugin for that
     platform loads. The argument is typed `Any` for the reason given at `handler_address`.
+    The package that calls this function is recorded as the provider of the target.
+    """
+    add_target(name, handler, platform, command_buffer_compatible, calling_package())
+
+
+def add_target(
+    name: str,
+    handler: Any,
+    platform: str,
+    command_buffer_compatible: bool,
+    provider: str | None,
+) -> None:
+    """Registers a handler for a provider, which the callers of this function determine.
+
+    The handler is typed `Any` for the reason given at `handler_address`.
     """
     key = (platform_key(platform), name)
     address = handler_address(handler)
@@ -157,8 +198,19 @@ def register_ffi_target(
                 f"The FFI target {name} on {key[0]} is registered with another handler."
             )
         return
-    targets[key] = Target(name, address, key[0], traits)
+    targets[key] = Target(name, address, key[0], traits, provider)
     apply_targets()
+
+
+def target_provider(name: str, platform: str = "cpu") -> str | None:
+    """Returns the package that registered a target, or `None` when it is not known.
+
+    The provider is known for handlers that a library registered through
+    `register_ffi_target` or `jax.ffi.register_ffi_target` after cyxla was imported. A
+    handler that was read from the registry of JAX when the plugin started has none.
+    """
+    target = targets.get((platform_key(platform), name))
+    return None if target is None else target.provider
 
 
 def registry_targets(platform: str) -> list[tuple[str, Any, bool]]:
@@ -258,19 +310,20 @@ def register_jax_targets(platform: str | None = None) -> int:
 
 
 def register_mirrored(
-    name: str, handler: Any, platform: str, command_buffer_compatible: bool
+    name: str,
+    handler: Any,
+    platform: str,
+    command_buffer_compatible: bool,
+    provider: str | None = None,
 ) -> None:
     """Registers a handler of JAX, with a warning instead of an error if it cannot run.
 
-    The handler is typed `Any` for the reason given at `handler_address`.
+    The handler is typed `Any` for the reason given at `handler_address`. The provider is
+    `None` for handlers that were read from the registry of JAX, since nothing there tells
+    which library registered them.
     """
     try:
-        register_ffi_target(
-            name,
-            handler,
-            platform,
-            command_buffer_compatible=command_buffer_compatible,
-        )
+        add_target(name, handler, platform, command_buffer_compatible, provider)
     except (ValueError, TypeError) as error:
         warnings.warn(
             f"The FFI target {name} is not available to cyxla: {error}",
@@ -306,7 +359,11 @@ def mirror_jax_registrations() -> None:
         original(name, fn, platform, api_version, traits)
         if api_version >= 1:
             register_mirrored(
-                name, fn, platform, bool(int(traits) & COMMAND_BUFFER_COMPATIBLE)
+                name,
+                fn,
+                platform,
+                bool(int(traits) & COMMAND_BUFFER_COMPATIBLE),
+                calling_package(),
             )
 
     # The module dictionary is written, because the type checker forbids assigning to a
