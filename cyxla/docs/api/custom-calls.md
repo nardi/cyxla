@@ -5,6 +5,8 @@ guide](../guide/custom-calls.md) explains when each is needed.
 
 ::: cyxla.register_ffi_target
 
+::: cyxla.target_provider
+
 ::: cyxla.register_jax_targets
 
 ::: cyxla.mirror_jax_registrations

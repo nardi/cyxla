@@ -12,6 +12,14 @@
 
 ::: cyxla.record_custom_calls
 
+::: cyxla.missing_targets
+
+::: cyxla.check_targets
+
+::: cyxla.MissingTarget
+
+::: cyxla.MissingTargetError
+
 ::: cyxla.TargetMismatchError
 
 ::: cyxla.TargetFingerprint

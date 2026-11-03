@@ -5,13 +5,15 @@ can compile, and the serialized executable for each target that has one. Loading
 executable of the current target when there is one and compiles the bytecode otherwise.
 """
 
+import importlib
+import importlib.metadata
 import time
-from collections.abc import Mapping
-from typing import Any, Literal
+from collections.abc import Mapping, Sequence
+from typing import Any, Literal, NamedTuple
 
 import numpy as np
 
-from cyxla import _targets
+from cyxla import _ffi, _targets
 from cyxla._bundle import Bundle, BundleWriter
 from cyxla._cache import CompileStatistics, compile_program
 from cyxla._lowering import LoweredProgram
@@ -21,6 +23,51 @@ from cyxla._types import ArrayType
 
 class TargetMismatchError(RuntimeError):
     """A bundle has no executable that this machine can load, and recompiling is off."""
+
+
+class MissingTargetError(RuntimeError):
+    """A program calls an FFI target that no library has registered in this process."""
+
+
+class MissingTarget(NamedTuple):
+    """An FFI target that a stored program needs and this process has not registered."""
+
+    name: str
+    """The name of the custom call target."""
+    provider: str | None
+    """The package that registered the target when the program was stored, if known."""
+    version: str | None
+    """The version of the distribution of the provider at that time, if known."""
+
+
+def distribution_version(package: str | None) -> str | None:
+    """Returns the version of the distribution that provides a top-level package, if any."""
+    if package is None:
+        return None
+    for distribution in importlib.metadata.packages_distributions().get(package, ()):
+        return importlib.metadata.version(distribution)
+    return None
+
+
+def registered_targets(
+    names: Sequence[str], platform: str | None
+) -> dict[str, dict[str, str | None]]:
+    """Returns the provider and its version for each target that was registered with cyxla.
+
+    A target that the plugin has built in is not in the registry. Nothing has to register it
+    when a program loads, so it is left out.
+    """
+    if platform is None:
+        return {}
+    found: dict[str, dict[str, str | None]] = {}
+    for name in names:
+        target = _ffi.targets.get((_ffi.platform_key(platform), name))
+        if target is not None:
+            found[name] = {
+                "provider": target.provider,
+                "version": distribution_version(target.provider),
+            }
+    return found
 
 
 def pack_program(
@@ -41,13 +88,15 @@ def pack_program(
     executable_blob = f"{name}.executable"
     writer.add(code_blob, program.code)
     writer.add(executable_blob, executable.serialize())
+    custom_calls = _targets.custom_call_targets(program.text)
     return {
         "name": name,
         "platform": program.platform,
         "input_types": [
             [item.dtype.name, list(item.shape)] for item in executable.input_types
         ],
-        "custom_calls": list(_targets.custom_call_targets(program.text)),
+        "custom_calls": list(custom_calls),
+        "registered_targets": registered_targets(custom_calls, program.platform),
         "code": code_blob,
         "executables": {_targets.target_fingerprint().key: executable_blob},
     }
@@ -61,6 +110,65 @@ def record_custom_calls(records: list[Mapping[str, Any]]) -> tuple[str, ...]:
     return tuple(
         sorted({target for record in records for target in record["custom_calls"]})
     )
+
+
+def missing_targets(records: Sequence[Mapping[str, Any]]) -> tuple[MissingTarget, ...]:
+    """Returns the targets that records need which this process has not registered.
+
+    Only targets that were registered with cyxla when the program was stored count, since
+    the plugin has the others built in. Call it after `initialize`, which registers the
+    handlers of jaxlib, and after the libraries of the programs are imported. A record from
+    before targets were recorded needs none.
+    """
+    found: dict[str, MissingTarget] = {}
+    for record in records:
+        platform = _ffi.platform_key(record["platform"])
+        for name, origin in record.get("registered_targets", {}).items():
+            if (platform, name) not in _ffi.applied:
+                found.setdefault(
+                    name, MissingTarget(name, origin["provider"], origin["version"])
+                )
+    return tuple(sorted(found.values(), key=lambda target: target.name))
+
+
+def check_targets(
+    records: Sequence[Mapping[str, Any]], import_providers: bool = False
+) -> None:
+    """Raises a `MissingTargetError` unless every target that records need is registered.
+
+    The error names each target with the package and version that provided it. With
+    `import_providers` the missing ones are imported first, which makes the library register
+    its handlers. A name in a file is code to run, so this stays off unless the caller
+    trusts the file.
+    """
+    missing = missing_targets(records)
+    if missing and import_providers:
+        for package in sorted(
+            {target.provider for target in missing if target.provider}
+        ):
+            try:
+                importlib.import_module(package)
+            except ImportError as error:
+                raise MissingTargetError(
+                    f"The package {package}, which provides FFI targets, cannot be "
+                    f"imported: {error}"
+                ) from error
+        missing = missing_targets(records)
+    if not missing:
+        return
+    lines = ["The programs call FFI targets that no library has registered:"]
+    for target in missing:
+        match target:
+            case MissingTarget(name, None, _):
+                lines.append(f"  {name} (the provider is not known)")
+            case MissingTarget(name, provider, None):
+                lines.append(f"  {name} (provided by {provider})")
+            case _:
+                lines.append(
+                    f"  {target.name} (provided by {target.provider} {target.version})"
+                )
+    lines.append("Import the library that provides them before loading the programs.")
+    raise MissingTargetError("\n".join(lines))
 
 
 def load_program(
