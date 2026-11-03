@@ -893,13 +893,18 @@ class Executable:
             raise_last_error("PJRT_LoadedExecutable_Execute")
         return results
 
-    def warm_up(self) -> None:
-        """Executes the program once on zeros, so that the first real call is not slower.
+    def warm_up(self, arguments: Sequence[ArrayLike] | None = None) -> None:
+        """Executes the program once, so that the first real call is not slower.
 
-        A freshly loaded executable does some of its work lazily, such as paging in its code.
-        The arguments come from `input_types`, so it needs an executable from
-        `compile_program` or `load_program`.
+        A freshly loaded executable does some of its work lazily, such as paging in its
+        code. Without `arguments` the program runs on zeros of the types in `input_types`,
+        so it needs an executable from `compile_program` or `load_program`. A program that
+        checks its inputs, such as one that factorizes a matrix, can fail on zeros, and then
+        the caller passes arguments that it accepts.
         """
+        if arguments is not None:
+            self.run(arguments)
+            return
         expected = self.input_types
         if expected is None:
             raise ValueError("The types of the arguments are not known.")

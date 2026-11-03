@@ -121,6 +121,16 @@ def test_warm_up_runs_on_zeros() -> None:
     bare = cx.Executable.deserialize(compiled_square().serialize())
     with pytest.raises(ValueError, match="types of the arguments are not known"):
         bare.warm_up()
+    # Given arguments need no types, so the executable without them can warm up too.
+    bare.warm_up([np.ones(3)])
+
+
+def test_warm_up_checks_given_arguments() -> None:
+    """Checks that given arguments run through the same checks as `run`."""
+    executable = compiled_square()
+    executable.warm_up([np.ones(3)])
+    with pytest.raises(ValueError, match="takes 1 arguments"):
+        executable.warm_up([np.ones(3), np.ones(3)])
 
 
 def test_deserialize_takes_buffers_on_several_threads() -> None:
