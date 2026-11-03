@@ -8,3 +8,7 @@ cdef extern from "_platform.h" nogil:
     void* cyxla_aligned_alloc(size_t alignment, size_t size)
     void cyxla_aligned_free(void* memory)
     double cyxla_monotonic_seconds()
+    char* cyxla_thread_message()
+
+    enum:
+        THREAD_MESSAGE_SIZE "CYXLA_THREAD_MESSAGE_SIZE"

@@ -115,14 +115,59 @@ The compiled executable refers to the handler by name. The disk cache therefore 
 valid when a library updates its handler. The key of a lowered program only changes when
 the caller adds the library to the distributions of `cache_key`.
 
+## Python callbacks
+
+`jax.debug.callback`, `jax.pure_callback` and `jax.experimental.io_callback` call back
+into Python. JAX cannot export such a function, so `lower` raises a `HostCallbackError`
+that lists each callback with the file and line that made it. Libraries such as Equinox
+add callbacks through their error checks, and `EQX_ON_ERROR=nan` removes those when it
+is set before Equinox is imported.
+
+`lower(..., host_callbacks=True)` runs the callbacks instead. cyxla replaces each
+callback in the jaxpr of the function by a call of the built-in native function
+`cyxla.python_callback`, and the callback number travels in the attribute `index`. The
+handler of jaxlib cannot be used, because it reads the callbacks from an execution
+context that only the client of jaxlib fills. Calling it through the PJRT C API crashes
+the process, so cyxla leaves it unregistered. The native function takes the GIL and
+calls the callback, so it runs on the same handler as other [native
+functions](native-functions.md).
+
+```python
+def checked(x):
+    def fail(value):
+        raise ValueError("negative input")
+
+    spec = jax.ShapeDtypeStruct(x.shape, x.dtype)
+    return jax.lax.cond(
+        jnp.any(x < 0), lambda v: jax.pure_callback(fail, spec, v), lambda v: v, x
+    )
+
+
+program = cx.lower(checked, shapes, host_callbacks=True)
+```
+
+An exception in a callback ends the execution with a `RuntimeError` that names the
+exception. The executable remains usable.
+
+- The native function takes the GIL for each callback. `Executable.run` and the
+  extension modules of cyxla release it while a program runs, and code that calls
+  `execute` with the GIL held would deadlock.
+- A program refers to its callbacks by numbers that only mean something in the process
+  that lowered it. It cannot be stored, serialized or cached on disk, and the functions
+  that would do so raise an error. The callbacks remain registered as long as the
+  program or an executable compiled from it exists.
+- A callback takes at most 32 arguments and returns at most 32 results, which is the
+  limit of native functions.
+- Callbacks run on the CPU only, and ordered callbacks (`ordered=True`) are not
+  supported, because the runtime has no way to pass their tokens.
+- Lowering rewrites the jaxpr of the function, which replaces every callback by a call
+  of the native function. It finds the callbacks by the name of their primitive and runs
+  the `callback` param of each equation, so a future version of JAX that renames them
+  would break it. The tests of cyxla would show that.
+
 ## Unsupported calls
 
 - Handlers of the untyped interface (`api_version=0`) fail to compile with an error
   about the API version.
-- `jax.pure_callback` and `jax.experimental.io_callback` call back into Python, which
-  the plugin cannot do. JAX refuses to serialize them, and `lower` raises a
-  `HostCallbackError` that lists each callback with the file and line that made it.
-  Libraries such as Equinox add callbacks through their error checks, and
-  `EQX_ON_ERROR=nan` removes those when it is set before Equinox is imported.
 - A target that nobody registered fails to compile with "No FFI handler registered for"
   and the target name, followed by a reminder to register it.

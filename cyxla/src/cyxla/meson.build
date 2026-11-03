@@ -4,6 +4,7 @@ python.install_sources(
   '__main__.py',
   '_bundle.py',
   '_cache.py',
+  '_callbacks.py',
   '_codec.py',
   '_ffi.py',
   '_lowering.py',

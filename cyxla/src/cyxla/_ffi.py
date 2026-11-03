@@ -40,6 +40,21 @@ PLATFORM_ALIASES = {"host": "cpu", "gpu": "cuda"}
 PLATFORM_SPELLINGS = {"cpu": "cpu", "cuda": "CUDA", "rocm": "ROCM"}
 """Spellings of platform names that XLA's FFI registry takes, as JAX passes them."""
 
+PYTHON_CALLBACK_TARGETS = frozenset(
+    {
+        "xla_ffi_python_cpu_callback",
+        "xla_ffi_partitioned_python_cpu_callback",
+        "xla_buffer_python_cpu_callback",
+    }
+)
+"""Handlers of jaxlib that call back into Python, which the plugin cannot run.
+
+They read the callbacks of an executable from the execution context, and only the client
+of jaxlib puts them there. Under the PJRT C API of cyxla the context is empty, and calling
+the handler crashes the process. Leaving them unregistered turns that into an error at
+compile time.
+"""
+
 PASSTHROUGH_PACKAGES = frozenset({"jax", "jaxlib", "cyxla", "importlib", "builtins"})
 """Top-level packages whose frames are skipped when looking for the registering library.
 
@@ -320,8 +335,11 @@ def register_mirrored(
 
     The handler is typed `Any` for the reason given at `handler_address`. The provider is
     `None` for handlers that were read from the registry of JAX, since nothing there tells
-    which library registered them.
+    which library registered them. Handlers that need the execution context of jaxlib are
+    skipped without a warning.
     """
+    if name in PYTHON_CALLBACK_TARGETS:
+        return
     try:
         add_target(name, handler, platform, command_buffer_compatible, provider)
     except (ValueError, TypeError) as error:

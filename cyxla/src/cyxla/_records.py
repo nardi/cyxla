@@ -18,7 +18,7 @@ from cyxla._bundle import Bundle, BundleWriter
 from cyxla._cache import CompileStatistics, compile_program
 from cyxla._lowering import LoweredProgram
 from cyxla._runtime import Executable
-from cyxla._types import ArrayType
+from cyxla._types import ArrayType, refuse_callbacks
 
 
 class TargetMismatchError(RuntimeError):
@@ -100,6 +100,7 @@ def pack_program(
         raise ValueError(
             "The executable has no lowered program, so it cannot be stored."
         )
+    refuse_callbacks(program, "stored")
     code_blob = f"{name}.code"
     executable_blob = f"{name}.executable"
     writer.add(code_blob, program.code)

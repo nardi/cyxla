@@ -24,7 +24,7 @@ import numpy as np
 from cyxla import _plugins
 from cyxla._lowering import LoweredProgram
 from cyxla._runtime import Executable
-from cyxla._types import ArrayType
+from cyxla._types import ArrayType, refuse_callbacks
 
 CACHE_ENVIRONMENT_VARIABLE = "CYXLA_CACHE_DIR"
 """Environment variable with the directory of the disk cache."""
@@ -224,7 +224,14 @@ def load_lowered(key: str) -> tuple[LoweredProgram | None, ...] | None:
 
 
 def store_lowered(key: str, programs: Sequence[LoweredProgram | None]) -> None:
-    """Stores lowered programs under a key."""
+    """Stores lowered programs under a key.
+
+    A program with Python callbacks is refused, since the callbacks exist in this process
+    only.
+    """
+    for program in programs:
+        if program is not None:
+            refuse_callbacks(program, "stored")
     write_atomically(cache_directory() / f"{key}.lowered", encode_lowered(programs))
 
 
@@ -250,6 +257,8 @@ def compile_program(
     arguments to them.
     """
     _plugins.require_platform(program.platform)
+    # The key of a program with callbacks holds numbers that name callbacks of this process.
+    disk_cache = disk_cache and program.callbacks is None
     path = cache_directory() / f"{executable_key(program)}.pjrt" if disk_cache else None
     if path is not None and path.exists():
         start = time.perf_counter()

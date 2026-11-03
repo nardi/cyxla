@@ -12,6 +12,8 @@ from cyxla._types import ArrayType
 if TYPE_CHECKING:
     import jax
 
+    from cyxla._callbacks import CallbackHandle
+
 LOWERING_PLATFORMS = frozenset({"cpu", "cuda", "rocm", "tpu"})
 """Platforms that `jax.export` lowers for, which are also the names the plugins report."""
 
@@ -40,6 +42,12 @@ class LoweredProgram(NamedTuple):
     """The type of each argument, or `None` when it is not known."""
     platform: str | None = None
     """The platform that the program was lowered for, or `None` when it is not known."""
+    callbacks: "CallbackHandle | None" = None
+    """Keeps the Python callbacks of the program registered, or `None` for a program without.
+
+    A program with callbacks refers to them by a number that only means something in this
+    process, so it cannot be stored, serialized or cached on disk.
+    """
 
 
 def jax_platform_name(name: str) -> str:
@@ -180,7 +188,10 @@ def host_callback_message(sites: Sequence[CallbackSite]) -> str:
     """Returns the error message for a function that calls back into Python."""
     lines = ["The function calls back into Python, which a lowered program cannot do."]
     lines.extend(f"  {site.primitive} at {site.location}" for site in sites)
-    lines.append("Remove the callbacks from the function.")
+    lines.append(
+        "Remove the callbacks from the function, or pass `host_callbacks=True` to run them "
+        "in this process. A program with callbacks cannot be stored."
+    )
     if "equinox" in sys.modules:
         lines.append(
             "A callback from `equinox.error_if` goes away when the environment variable "
@@ -221,6 +232,7 @@ def lower(
     platform: str | None = None,
     custom_calls: Sequence[str] | Literal["detect"] = (),
     debug_info: bool = True,
+    host_callbacks: bool = False,
 ) -> LoweredProgram:
     """Lowers a function to StableHLO for a platform, which by default follows JAX.
 
@@ -241,6 +253,14 @@ def lower(
     A function that calls back into Python, such as one with `jax.debug.callback`, cannot be
     exported. Lowering it raises a `HostCallbackError` that lists the callbacks.
 
+    With `host_callbacks=True` the function may call back into Python, through
+    `jax.debug.callback`, `jax.pure_callback` and `jax.experimental.io_callback`. JAX cannot
+    export such a function, so cyxla first rewrites its jaxpr: every callback becomes a call
+    of the built-in native function `cyxla.python_callback`, which takes the GIL and runs
+    the callback. The program only works in this process, since it refers to the callbacks
+    by a number. Ordered callbacks (`ordered=True`) are not supported, and neither are other
+    platforms than the CPU.
+
     With `debug_info=False` the program loses the source locations of its operations. Its
     executable is smaller and loads faster, and profiles and error messages of the plugin no
     longer point at lines of the function.
@@ -252,6 +272,19 @@ def lower(
 
     target = lowering_platform(platform, shapes)
     jitted = jax.jit(function, keep_unused=True)
+    handle = None
+    if host_callbacks:
+        from cyxla import _callbacks
+
+        if target != "cpu":
+            raise NotImplementedError(
+                f"Python callbacks run on the CPU only, not on {target}."
+            )
+        handle = _callbacks.CallbackHandle()
+        jitted = jax.jit(
+            _callbacks.rewrite_callbacks(jitted.trace(*shapes).jaxpr, handle),
+            keep_unused=True,
+        )
     match custom_calls:
         case "detect":
             lowered = jitted.trace(*shapes).lower(lowering_platforms=(target,))
@@ -291,7 +324,11 @@ def lower(
     if not debug_info:
         code, module_text = without_debug_info(code)
     return LoweredProgram(
-        code=code, text=module_text, input_types=input_types, platform=target
+        code=code,
+        text=module_text,
+        input_types=input_types,
+        platform=target,
+        callbacks=handle if handle is not None and handle.keys else None,
     )
 
 

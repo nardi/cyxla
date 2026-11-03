@@ -24,6 +24,21 @@
 #include <time.h>
 #endif
 
+#ifdef _WIN32
+#define CYXLA_THREAD_LOCAL __declspec(thread)
+#else
+#define CYXLA_THREAD_LOCAL _Thread_local
+#endif
+
+#define CYXLA_THREAD_MESSAGE_SIZE 1024
+
+/* Returns a buffer that belongs to the calling thread, for the message of a native function
+ * that fails. The message stays valid until the thread calls a native function again. */
+static char* cyxla_thread_message(void) {
+  static CYXLA_THREAD_LOCAL char message[CYXLA_THREAD_MESSAGE_SIZE];
+  return message;
+}
+
 /* Opens a shared library by its UTF-8 path and returns its handle, or NULL on failure. */
 static void* cyxla_open_library(const char* path) {
 #ifdef _WIN32

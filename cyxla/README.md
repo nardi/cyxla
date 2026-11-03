@@ -155,9 +155,9 @@ program = cx.lower(my_library.function, shapes, custom_calls=["my_target"])
 ```
 
 The plugin accepts typed FFI handlers with an `execute` stage. It does not run the older
-untyped custom calls (`api_version=0`) or the Python callbacks of `jax.pure_callback`
-and `jax.experimental.io_callback`, and compiling a program with one raises an error
-that names the target.
+untyped custom calls (`api_version=0`), and compiling a program with one raises an error
+that names the target. Python callbacks run when `lower` is called with
+`host_callbacks=True`, as the [custom calls](docs/guide/custom-calls.md) page describes.
 
 ## Disk cache
 
@@ -181,8 +181,8 @@ distributions that the caller names.
 - Buffers hold the dtypes listed above and no others, such as the 8-bit floats, 4-bit
   integers and PRNG keys. `cx.lower` refuses a function that uses them. TPUs do not
   support `float64`, so programs for them fail to compile.
-- Custom calls need a typed FFI handler. Untyped custom calls and Python callbacks do
-  not work.
+- Custom calls need a typed FFI handler, so untyped custom calls do not work. Python
+  callbacks run on the CPU only and only in the process that lowered the program.
 - The GPU and TPU paths are tested up to client creation. CI has no GPU, so execution on
   one is untested.
 - On Windows only the CPU plugin exists, since JAX publishes no native GPU plugins

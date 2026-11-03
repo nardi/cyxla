@@ -72,6 +72,9 @@ relative_files = true
 patch = ["subprocess"]
 
 [tool.coverage.report]
+# The inline helpers in `_native.pxd` that the traced modules do not call run in the
+# downstream test module, which is built without line tracing. Its test checks their results.
+omit = ["src/cyxla/_native.pxd"]
 fail_under = 100
 show_missing = true
 exclude_also = ["if TYPE_CHECKING:", "raise AssertionError", "@overload", "if __name__ == .__main__.:"]
