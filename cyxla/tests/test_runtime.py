@@ -287,7 +287,7 @@ def test_run_errors() -> None:
     """Checks the errors of too many arguments, of unsupported dtypes and of bad sizes."""
     program = cx.lower(jnp.sin, (jax.ShapeDtypeStruct((3,), jnp.float64),))
     executable = Executable.compile(program.code, cx.compile_options())
-    with pytest.raises(ValueError, match="at most 8 arguments and returns at most 4"):
+    with pytest.raises(ValueError, match="at most 8 arguments and returns at most 8"):
         executable.run([np.zeros(3)] * 9)
     with pytest.raises(TypeError, match="Argument 0 has the dtype <U1"):
         executable.run([np.array(["a"])])
@@ -298,11 +298,21 @@ def test_run_errors() -> None:
 def test_too_many_outputs() -> None:
     """Checks that a program with more outputs than the runtime returns is refused."""
     shapes = (jax.ShapeDtypeStruct((2,), jnp.float64),)
-    program = cx.lower(lambda x: (x,) * 5, shapes)
+    program = cx.lower(lambda x: (x,) * 9, shapes)
     executable, _ = cx.compile_program(program, disk_cache=False)
-    assert executable.num_outputs == 5
-    with pytest.raises(ValueError, match="returns at most 4 outputs, not 1 and 5"):
+    assert executable.num_outputs == 9
+    with pytest.raises(ValueError, match="returns at most 8 outputs, not 1 and 9"):
         executable.run([np.zeros(2)])
+
+
+def test_most_outputs() -> None:
+    """Checks that a program with as many outputs as the runtime allows runs."""
+    shapes = (jax.ShapeDtypeStruct((2,), jnp.float64),)
+    program = cx.lower(lambda x: tuple(x + index for index in range(8)), shapes)
+    executable, _ = cx.compile_program(program, disk_cache=False)
+    results = executable.run([np.array([1.0, 2.0])])
+    assert len(results) == 8
+    np.testing.assert_array_equal(results[7], [8.0, 9.0])
 
 
 def test_unsupported_output_type() -> None:
