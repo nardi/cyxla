@@ -6,7 +6,7 @@ call, which names a native function that the program runs. On the CPU, `jnp.lina
 libraries that add primitives, such as a fast solver, do the same with their own
 functions.
 
-A PJRT plugin is a separate build of XLA, and it knows none of these functions. The
+A PJRT plugin is a separate build of XLA, and it has none of these functions. The
 program compiles only after each target is registered with the plugin by name. cyxla
 does that for the kernels of jaxlib and for everything else that libraries register with
 JAX.

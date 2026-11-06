@@ -11,7 +11,7 @@ tracing design.
 loaded plugin. The export holds [StableHLO](https://openxla.org/stablehlo), a portable
 set of operations that XLA compiles for every backend. Exporting lowers for a platform
 without needing its hardware, and the bytecode is a plain serialization, which the disk
-cache stores. Custom calls are the exception, since the export only knows compatibility
+cache stores. Custom calls are the exception, since the export only has compatibility
 guarantees for the kernels that JAX ships, as the [custom calls](guide/custom-calls.md)
 page describes.
 

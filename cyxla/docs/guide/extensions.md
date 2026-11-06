@@ -67,7 +67,7 @@ asks for the aliased buffers, and it falls back to copies on a plugin that canno
 host memory. An output whose destination is `NULL` is dropped. After a failure,
 `error_info()` returns the number of PJRT errors so far and the last message.
 
-## Running without JAX
+## Processes without JAX
 
 Importing cyxla does not import JAX. Only `lower` does, when it traces a function. A
 process that loads serialized executables with `Executable.deserialize` and runs them
