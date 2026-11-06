@@ -738,10 +738,10 @@ class Executable:
     def compile(code: bytes, compile_options: bytes) -> Executable:
         """Compiles StableHLO bytecode with a serialized `CompileOptionsProto`."""
         ensure_initialized()
-        code_data: cython.p_char
-        options_data: cython.p_char
-        code_size: cython.Py_ssize_t
-        options_size: cython.Py_ssize_t
+        code_data: cython.p_char = cython.NULL
+        options_data: cython.p_char = cython.NULL
+        code_size: cython.Py_ssize_t = 0
+        options_size: cython.Py_ssize_t = 0
         PyBytes_AsStringAndSize(
             code, cython.address(code_data), cython.address(code_size)
         )
@@ -827,7 +827,7 @@ class Executable:
     @property
     def output_bytes(self) -> tuple[int, ...]:
         """The size in bytes of each output, which fills `ProgramSpec.output_bytes`."""
-        return tuple(output.nbytes for output in self.output_types)
+        return tuple([output.nbytes for output in self.output_types])
 
     def run(
         self, arguments: Sequence[ArrayLike], zero_copy: bool = True

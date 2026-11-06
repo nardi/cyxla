@@ -2,6 +2,13 @@
 # downstream project would build it.
 project('downstream', 'c', default_options: ['c_std=c11'])
 
+add_project_arguments(
+  meson.get_compiler('c').get_supported_arguments(
+    '-Werror=incompatible-pointer-types', '-Werror=incompatible-function-pointer-types',
+  ),
+  language: 'c',
+)
+
 python = import('python').find_installation(pure: false)
 cython = find_program('cython')
 
