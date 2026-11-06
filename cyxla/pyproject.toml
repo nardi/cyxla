@@ -51,7 +51,8 @@ docs = ["zensical>=0.0.73", "mkdocstrings-python>=2"]
 default-groups = ["build", "dev", "plugin"]
 no-build-isolation-package = ["cyxla"]
 # Development builds trace lines in the Cython module, so its coverage is measured as well.
-config-settings = { setup-args = "-Dcoverage=true" }
+# They also fail on warnings of Cython and on mismatched function pointer types.
+config-settings = { setup-args = ["-Dcoverage=true", "-Dstrict=true"] }
 
 [tool.uv.sources]
 cyxla-pjrt-cpu = { path = "../cyxla-pjrt-cpu" }

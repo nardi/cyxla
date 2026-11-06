@@ -31,6 +31,15 @@ cython_args = ['-3', '--fast-fail']
 c_args = meson.get_compiler('c').get_supported_arguments(
   '-Wno-unused-function', '-Wno-unused-variable', '-Wno-unused-but-set-variable',
 )
+if get_option('strict')
+  # Cython checks the C types of its code, such as pointers against integers, and reports
+  # what it cannot check as warnings. The C compiler rejects a function pointer of the
+  # wrong type, which older versions of GCC only warn about.
+  cython_args += ['-Werror', '-Wextra']
+  c_args += meson.get_compiler('c').get_supported_arguments(
+    '-Werror=incompatible-pointer-types', '-Werror=incompatible-function-pointer-types',
+  )
+endif
 if get_option('coverage')
   cython_args += ['-X', 'linetrace=True']
   # Coverage measures branches through `sys.settrace` before Python 3.14, so Cython has to

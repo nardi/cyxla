@@ -1,2 +1,4 @@
 option('coverage', type: 'boolean', value: false,
   description: 'Compile the Cython modules with line tracing, for coverage measurement')
+option('strict', type: 'boolean', value: false,
+  description: 'Turn warnings of Cython and pointer type mismatches of the C compiler into errors')
