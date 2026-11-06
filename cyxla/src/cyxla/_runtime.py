@@ -115,6 +115,12 @@ from cython.cimports.libc.stdlib import calloc, free
 from cython.cimports.libc.string import memcpy, memset
 from numpy.typing import ArrayLike
 
+from cyxla._arguments import (
+    check_counts,
+    empty_results,
+    prepared_arguments,
+    zero_arguments,
+)
 from cyxla._types import (
     ArrayType,
     ErrorInfo,
@@ -843,20 +849,9 @@ class Executable:
         num_inputs: cython.int = len(arguments)
         num_outputs: cython.int = self.num_outputs
         expected = self.input_types
-        if num_inputs > MAX_INPUTS or num_outputs > MAX_OUTPUTS:
-            raise ValueError(
-                f"The runtime takes at most {MAX_INPUTS} arguments and returns at most "
-                f"{MAX_OUTPUTS} outputs, not {num_inputs} and {num_outputs}."
-            )
-        if expected is not None and len(expected) != num_inputs:
-            raise ValueError(
-                f"The program takes {len(expected)} arguments, not {num_inputs}."
-            )
-        values = [
-            as_input(argument, None if expected is None else expected[index], index)
-            for index, argument in enumerate(arguments)
-        ]
-        results = [np.empty(output.shape, output.dtype) for output in self.output_types]
+        check_counts(num_inputs, num_outputs, expected, MAX_INPUTS, MAX_OUTPUTS)
+        values = prepared_arguments(arguments, expected, CODES)
+        results = empty_results(self.output_types)
         spec: ProgramSpec
         spec.handle = self.handle
         spec.num_inputs = num_inputs
@@ -911,10 +906,7 @@ class Executable:
         if arguments is not None:
             self.run(arguments)
             return
-        expected = self.input_types
-        if expected is None:
-            raise ValueError("The types of the arguments are not known.")
-        self.run([np.zeros(item.shape, item.dtype) for item in expected])
+        self.run(zero_arguments(self.input_types))
 
     def serialize(self) -> bytes:
         """Returns the executable in the plugin's serialized form.
@@ -954,39 +946,6 @@ def get_executable(
     arguments.loaded_executable = handle
     check(api.PJRT_LoadedExecutable_GetExecutable(cython.address(arguments)))
     return arguments.executable
-
-
-def as_input(
-    argument: np.ndarray, expected: ArrayType | None, index: int
-) -> np.ndarray:
-    """Returns an argument as a flat, contiguous array of the type that the program takes.
-
-    Without a known type the argument keeps its dtype, which has to be supported. Otherwise
-    it converts to the type of the program when no information is lost beyond rounding, so
-    `float64` values pass for a `float32` argument, but `float64` values do not pass for an
-    `int32` one.
-    """
-    array = np.ascontiguousarray(argument)
-    if expected is None:
-        if array.dtype not in CODES:
-            raise TypeError(
-                f"Argument {index} has the dtype {array.dtype}, which cyxla does not support."
-            )
-        return array.ravel()
-    if array.dtype != expected.dtype:
-        lossless = array.dtype.kind in "biu" and expected.dtype.kind in "fc"
-        if not (lossless or np.can_cast(array.dtype, expected.dtype, "same_kind")):
-            raise TypeError(
-                f"Argument {index} has the dtype {array.dtype}, which cannot convert to "
-                f"the {expected.dtype} that the program takes."
-            )
-        array = array.astype(expected.dtype)
-    if array.size != expected.size:
-        raise ValueError(
-            f"Argument {index} has {array.size} elements, but the program takes "
-            f"{expected.size}."
-        )
-    return array.ravel()
 
 
 @cython.cfunc

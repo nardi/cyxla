@@ -3,6 +3,7 @@ python.install_sources(
   '__init__.pxd',
   '__main__.py',
   '_bundle.py',
+  '_arguments.py',
   '_cache.py',
   '_callbacks.py',
   '_codec.py',
