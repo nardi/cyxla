@@ -1,6 +1,6 @@
 # Programs
 
-A program goes through three steps. `lower` turns a JAX function into StableHLO,
+A program has three steps. `lower` turns a JAX function into StableHLO,
 `compile_program` turns that into an executable for the loaded plugin, and the
 executable runs on host arrays.
 

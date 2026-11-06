@@ -1,4 +1,4 @@
-# Serializing programs
+# Program serialization
 
 The [disk cache](caching.md) keeps lowered programs and executables on one machine,
 under keys that a library computes from the functions it builds them from. A library
@@ -83,10 +83,10 @@ compile time once per load. The compile options of the plugin and its code gener
 for the host CPU make executables machine-specific, which is why the bytecode is always
 kept.
 
-## Loading in a process without JAX
+## Processes without JAX
 
 Importing cyxla does not import JAX. A process that loads a bundle and runs its programs
-can stay without it, which saves about half a second. Call
+can avoid importing it, which saves about half a second. Call
 `initialize(jax_targets=False)` unless a program uses custom calls.
 [`record_custom_calls`][cyxla.record_custom_calls] returns the targets that the records
 of a bundle need, and `initialize` registers the handlers of jaxlib for them when it is
@@ -113,7 +113,7 @@ recorded provider. Importing the missing providers is up to the caller, or
 `check_targets(records, import_providers=True)` does it. Importing a name from a file
 runs the code of that package, so the option is off by default.
 
-## Checking trees
+## Tree fingerprints
 
 A saved object works on flat vectors, so the caller supplies the trees that those
 vectors are cut from when loading. [`tree_fingerprint`][cyxla.tree_fingerprint] records

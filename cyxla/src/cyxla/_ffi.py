@@ -37,8 +37,8 @@ JAXLIB_MODULES = (
 PLATFORM_ALIASES = {"host": "cpu", "gpu": "cuda"}
 """Platform names of XLA that map to the names of the plugins."""
 
-PLATFORM_SPELLINGS = {"cpu": "cpu", "cuda": "CUDA", "rocm": "ROCM"}
-"""Spellings of platform names that XLA's FFI registry takes, as JAX passes them."""
+PLATFORM_REGISTRY_NAMES = {"cpu": "cpu", "cuda": "CUDA", "rocm": "ROCM"}
+"""The platform names that the FFI registry of XLA takes, by lower-case platform name."""
 
 PYTHON_CALLBACK_TARGETS = frozenset(
     {
@@ -89,7 +89,7 @@ jax_registration: Callable[..., None] | None = None
 
 
 def platform_key(platform: str) -> str:
-    """Returns the lower-case name that identifies a platform, whichever spelling is given."""
+    """Returns the lower-case name that identifies a platform, whatever its letter case."""
     name = platform.lower()
     return PLATFORM_ALIASES.get(name, name)
 
@@ -165,7 +165,7 @@ def apply_targets() -> int:
             _runtime.register_ffi_handler(
                 target.name,
                 target.handler,
-                PLATFORM_SPELLINGS.get(platform, platform),
+                PLATFORM_REGISTRY_NAMES.get(platform, platform),
                 target.traits,
             )
             applied.add(key)
@@ -254,8 +254,8 @@ def registry_targets(platform: str) -> list[tuple[str, Any, bool]]:
                 found[name] = (handler, compatible)
     with contextlib.suppress(ImportError, AttributeError):
         registry = importlib.import_module("jaxlib._jax")
-        spelling = PLATFORM_SPELLINGS.get(wanted, wanted)
-        for name, handler in registry.custom_call_targets(spelling).items():
+        registry_name = PLATFORM_REGISTRY_NAMES.get(wanted, wanted)
+        for name, handler in registry.custom_call_targets(registry_name).items():
             if isinstance(handler, Mapping):
                 found.setdefault(name, (handler, False))
     return [

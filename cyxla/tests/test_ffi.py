@@ -363,7 +363,7 @@ def test_registry_skips_bare_values(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         registry,
         "custom_call_targets",
-        lambda spelling: {"bare": 4096, "staged": {"execute": 8192}},
+        lambda platform: {"bare": 4096, "staged": {"execute": 8192}},
     )
     assert _ffi.registry_targets("cpu") == [("staged", {"execute": 8192}, False)]
 
