@@ -1,0 +1,3 @@
+[submodule "zensical-tufte"]
+	path = zensical-tufte
+	url = https://github.com/nardi/zensical-tufte.git

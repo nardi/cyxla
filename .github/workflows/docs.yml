@@ -8,6 +8,7 @@ on:
       - "cyxla/src/**"
       - "cyxla/zensical.toml"
       - "cyxla/pyproject.toml"
+      - "zensical-tufte/**"
       - ".github/workflows/docs.yml"
   workflow_dispatch:
 
@@ -25,6 +26,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The documentation site resolves the theme from the submodule.
+          submodules: true
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5

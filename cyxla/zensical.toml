@@ -34,6 +34,9 @@ nav = [
 
 [project.theme]
 language = "en"
+# The directory of the theme inside the submodule, which extends the built-in
+# theme through its mkdocs_theme.yml.
+custom_dir = "../zensical-tufte/zensical_tufte"
 features = [
   "content.code.copy",
   "navigation.sections",
@@ -55,3 +58,11 @@ members_order = "source"
 merge_init_into_class = true
 separate_signature = true
 show_signature_annotations = true
+
+# Zensical copies the files of the theme's package into the site, so they are excluded.
+[project.plugins.exclude]
+glob = ["mkdocs_theme.yml", "__init__.py", "__pycache__/*"]
+
+# The switcher of the header, which links the sites of the other repositories.
+[project.extra.site_switcher]
+current = "cyxla"
