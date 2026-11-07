@@ -1,18 +1,19 @@
 # Program serialization
 
-The [disk cache](caching.md) keeps lowered programs and executables on one machine,
-under keys that a library computes from the functions it builds them from. A library
-that wants to save a finished object in one process and load it in another needs more.
-The saved file has to stand alone, it has to carry the StableHLO in case the loading
-machine cannot use the executables, and it has to load fast. cyxla provides the parts
-for this, and each library decides what its own file holds.
+The [disk cache](caching.md) stores lowered programs and executables on one machine,
+under keys that a library computes from the functions that they were lowered from.
+Saving an object in one process and loading it in another has further requirements. The
+saved file has to be self-contained, it has to contain the StableHLO in case the
+executables cannot be used on the loading machine, and it has to load fast. cyxla
+provides the building blocks for such a file, and its contents are defined by each
+library.
 
 ## Bundles
 
 A [`BundleWriter`][cyxla.BundleWriter] collects named blobs and a JSON header into one
-file. The header says what kind of object the file holds and which version of that
-library's layout wrote it. A reader asks for the same kind and version and gets an error
-otherwise.
+file. The header contains the kind of object in the file and the version of the layout
+of the library. A reader passes the expected kind and version, and a mismatch raises an
+error.
 
 <!-- name: test_docs_serialization -->
 ```python
@@ -34,10 +35,10 @@ assert bundle.meta == {"size": 4}
 assert bundle.array("indices", np.int32).tolist() == [0, 1, 2, 3]
 ```
 
-Each blob starts at a multiple of 64 bytes and has a CRC, which is checked the first
-time the blob is read. A reader takes a blob as a `memoryview`, so blobs that it never
-uses cost nothing. `BundleWriter.write` writes a file that appears under its name only
-when it is complete, and `Bundle.read` reads one.
+Each blob starts at a multiple of 64 bytes and has a CRC, which the reader checks the
+first time it reads the blob. A reader takes a blob as a `memoryview`, so blobs that are
+never used are not read or checked. `BundleWriter.write` writes the file under a
+temporary name and renames it once it is complete, and `Bundle.read` reads one.
 
 ## Programs
 
@@ -47,20 +48,21 @@ header with the argument types, the platform, the custom call targets and the na
 the executable's blob. The executable has to come from `compile_program` or
 `load_program`, which set its `program` attribute.
 
-[`load_program`][cyxla.load_program] reverses it. The bundle holds an executable for
-each target that stored one, under the key of a
+[`load_program`][cyxla.load_program] loads the executable again. The bundle contains an
+executable for each target that stored one, under the key of a
 [`TargetFingerprint`][cyxla.TargetFingerprint]. If the current target has an executable,
-it is deserialized. Otherwise, or if the plugin rejects the executable, the StableHLO is
-compiled again, and `on_mismatch="raise"` raises a
+`load_program` deserializes it. Otherwise, or if the plugin rejects the executable, it
+compiles the StableHLO again, and `on_mismatch="raise"` raises a
 [`TargetMismatchError`][cyxla.TargetMismatchError] instead. The result is the executable
-and the [`CompileStatistics`][cyxla.CompileStatistics] of getting it.
+and the [`CompileStatistics`][cyxla.CompileStatistics] of loading or compiling it.
 
 <!-- name: test_docs_serialization -->
 ```python
 import jax
 import jax.numpy as jnp
 
-program = cx.lower(lambda x: jnp.sin(x) * 2, [jax.ShapeDtypeStruct((3,), jnp.float64)])
+shapes = [jax.ShapeDtypeStruct((3,), jnp.float64)]
+program = cx.lower(lambda values: jnp.sin(values) * 2, shapes)
 executable, _ = cx.compile_program(program, disk_cache=False)
 
 writer = cx.BundleWriter("example.program", 1)
@@ -78,27 +80,27 @@ assert np.allclose(result, 2 * np.sin([0.0, 1.0, 2.0]))
 ```
 
 A file that was written on another operating system, architecture or plugin version has
-no executable for the loading machine, so loading compiles the StableHLO. That costs the
-compile time once per load. The compile options of the plugin and its code generation
+no executable for the loading machine, so loading compiles the StableHLO. This adds the
+compile time to every load. The compile options of the plugin and its code generation
 for the host CPU make executables machine-specific, which is why the bytecode is always
-kept.
+stored.
 
 ## Processes without JAX
 
-Importing cyxla does not import JAX. A process that loads a bundle and runs its programs
-can avoid importing it, which saves about half a second. Call
+Importing cyxla does not import JAX, so a process that loads a bundle and runs its
+programs does not need to import JAX, which saves about half a second. Call
 `initialize(jax_targets=False)` unless a program uses custom calls.
 [`record_custom_calls`][cyxla.record_custom_calls] returns the targets that the records
-of a bundle need, and `initialize` registers the handlers of jaxlib for them when it is
-left at its default. `Executable.warm_up` executes a program once on zeros, so that the
-first real call does not pay for loading its code. A program that checks its inputs can
-fail on zeros, and `warm_up` then takes the arguments to run on.
+of a bundle require, and with its default arguments `initialize` registers the handlers
+of `jaxlib` for them. `Executable.warm_up` executes a program once on zeros, so that the
+code of the program is already loaded at the first real call. A program that checks its
+inputs can fail on zeros, so `warm_up` also accepts the arguments to run on.
 
 ## Targets of libraries
 
-A program that calls the handlers of a library needs that library imported when it
-loads, because the handlers live in the library. A record stores the package that
-registered each target and the version of its distribution.
+A program that calls the handlers of a library can only be loaded when that library is
+imported, because the handlers are defined in the library. A record stores the package
+that registered each target and the version of its distribution.
 [`check_targets`][cyxla.check_targets] raises a
 [`MissingTargetError`][cyxla.MissingTargetError] after `initialize` and before the first
 run, and the message names each missing target with its provider.
@@ -107,26 +109,27 @@ run, and the message names each missing target with its provider.
 cx.check_targets(records)
 ```
 
-The provider is known when the library registered its handlers after cyxla was imported.
-Handlers that were already in the registry of JAX when the plugin started have no
-recorded provider. Importing the missing providers is up to the caller, or
-`check_targets(records, import_providers=True)` does it. Importing a name from a file
-runs the code of that package, so the option is off by default.
+The provider is only known for handlers that were registered after cyxla was imported.
+Handlers that were already in the registry of JAX when the plugin loaded have no
+recorded provider. The caller can import the missing providers, or pass
+`import_providers=True` to `check_targets` to import them. Importing a package whose
+name is read from a file runs the code of that package, so the option is off by default.
 
 ## Tree fingerprints
 
-A saved object works on flat vectors, so the caller supplies the trees that those
-vectors are cut from when loading. [`tree_fingerprint`][cyxla.tree_fingerprint] records
-the path and shape of each leaf of a tree, and
-[`check_fingerprint`][cyxla.check_fingerprint] compares it with the fingerprint of the
-tree that the caller supplies. The error names the first leaf that differs.
-[`encode_fingerprint`][cyxla.encode_fingerprint] and
-[`decode_fingerprint`][cyxla.decode_fingerprint] move fingerprints through JSON headers,
-and [`encode_record`][cyxla.encode_record] and [`decode_record`][cyxla.decode_record] do
-the same for option records made of named tuples, enums and numbers.
+A saved object operates on flat vectors, so the trees that these vectors are flattened
+from have to be passed again when the object is loaded.
+[`tree_fingerprint`][cyxla.tree_fingerprint] records the path and shape of each leaf of
+a tree, and [`check_fingerprint`][cyxla.check_fingerprint] compares it with the
+fingerprint of the tree that is passed when loading. The error names the first leaf that
+differs. [`encode_fingerprint`][cyxla.encode_fingerprint] and
+[`decode_fingerprint`][cyxla.decode_fingerprint] convert fingerprints to and from JSON
+for the header, and [`encode_record`][cyxla.encode_record] and
+[`decode_record`][cyxla.decode_record] do the same for option records made of named
+tuples, enums and numbers.
 
 ## Trust
 
-A serialized executable is machine code, and the plugin loads it as it is. Load only
-files that you trust. The CRC of a blob detects damage, and it does not protect against
-someone who writes a file on purpose.
+A serialized executable is machine code, and the plugin loads it without verification.
+Load only files that you trust. The CRC of a blob detects corruption, but it does not
+protect against a file that was modified deliberately.
