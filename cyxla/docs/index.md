@@ -14,7 +14,7 @@ for SCIP.
 ## Installation
 
 cyxla needs Python 3.11 or newer. The extra installs the plugin that runs programs on
-your hardware, and nothing downloads at run time.
+your hardware, so nothing downloads at run time.
 
 ```bash
 pip install cyxla[cpu]
@@ -24,8 +24,8 @@ The [installation page](installation.md) lists the plugins for GPUs and TPUs.
 
 ## A first program
 
-This example lowers a function, compiles it and runs it. The plugin loads when the
-compilation first needs it.
+This example lowers a function, compiles it and runs it. cyxla loads the plugin at the
+first compilation.
 
 <!-- name: test_docs_index -->
 ```python
@@ -35,7 +35,8 @@ import numpy as np
 
 import cyxla as cx
 
-program = cx.lower(lambda x: jnp.sin(x) * 2, [jax.ShapeDtypeStruct((3,), jnp.float32)])
+shapes = [jax.ShapeDtypeStruct((3,), jnp.float32)]
+program = cx.lower(lambda values: jnp.sin(values) * 2, shapes)
 executable, statistics = cx.compile_program(program)
 (result,) = executable.run([np.array([0.0, 1.0, 2.0])])
 ```
@@ -53,23 +54,23 @@ describes.
 
 - Any function that JAX lowers to StableHLO runs, including control flow such as
   `lax.scan`, and `jnp.linalg` through the [LAPACK kernels of
-  jaxlib](guide/custom-calls.md). Libraries with their own primitives can register their
-  handlers too.
+  `jaxlib`](guide/custom-calls.md). Libraries with their own primitives can register
+  their handlers too.
 - Plugins exist for the CPU on Linux, macOS and Windows, and for NVIDIA GPUs, AMD GPUs
   and TPUs through the plugins that JAX publishes. The [plugins](guide/plugins.md) guide
   explains how cyxla picks one.
-- The [disk cache](guide/caching.md) keeps lowered programs and compiled executables
-  between processes.
+- Lowered programs and compiled executables are stored in the [disk
+  cache](guide/caching.md), so later processes can load them.
 
 ## Limits
 
-TPUs do not support `float64`. The untyped custom calls of older libraries do not run on
-the plugins, and Python callbacks run on the CPU only. The GPU and TPU paths are tested
-only up to creating the client, because CI has no such hardware. The [custom
-calls](guide/custom-calls.md) page covers what works there.
+TPUs do not support `float64`, the untyped custom calls of older libraries do not run on
+the plugins, and Python callbacks run on the CPU only. CI has no GPU or TPU, so those
+paths are tested only up to creating the client. The [custom
+calls](guide/custom-calls.md) page describes what works there.
 
 ## License
 
-cyxla is under the [Hippocratic License
+cyxla is licensed under the [Hippocratic License
 3.0](https://firstdonoharm.dev/version/3/0/core.html). The vendored PJRT headers are
-under XLA's Apache 2.0 license.
+licensed under XLA's Apache 2.0 license.

@@ -1,6 +1,6 @@
 # Programs
 
-Lowering, compiling and the records they return.
+Lowering, compilation, and the records that they return.
 
 ::: cyxla.lower
 
